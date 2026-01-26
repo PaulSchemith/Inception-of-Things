@@ -1,0 +1,20 @@
+vagrant plugin install vagrant-vmware-desktop
+
+
+# 1. Détruire les VMs existantes
+vagrant destroy -f
+
+# 2. Supprimer l'ancienne VM
+rm -rf "$HOME/VirtualBox VMs/loginS"
+
+# 3. Créer le dossier dans /goinfre
+mkdir -p "/goinfre/$USER/VirtualBoxVMs"
+
+# 4. Configurer VirtualBox pour utiliser ce dossier
+VBoxManage setproperty machinefolder "/goinfre/$USER/VirtualBoxVMs"
+
+# 5. Vérifier la configuration
+VBoxManage list systemproperties | grep "Default machine folder"
+
+# 6. Relancer Vagrant
+vagrant up --provider=virtualbox

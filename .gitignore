@@ -1,0 +1,22 @@
+# ===== Vagrant =====
+.vagrant/
+
+# ===== K3s / Kubernetes =====
+node-token
+*.kubeconfig
+kubeconfig*
+k3s.yaml
+
+# ===== OS / Editor =====
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ===== Logs =====
+*.log
+
+# ===== Temporary files =====
+*.tmp
+*.swp
+*~
