@@ -13,3 +13,9 @@ VBoxManage list systemproperties | grep "Default machine folder"
 
 # 6. Relancer Vagrant
 vagrant up --provider=virtualbox
+
+
+
+# P2
+vagrant up
+curl -H "Host: app1.com" http://192.168.56.110
