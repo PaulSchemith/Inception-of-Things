@@ -1,0 +1,48 @@
+Vagrant.configure("2") do |config|
+  # Box Ubuntu 22.04 LTS
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.hostname = "pschemitS"
+
+  # IP privée
+  config.vm.network "private_network", ip: "192.168.56.110"
+
+  # Redirection du port HTTP pour tests depuis l'hôte
+  config.vm.network "forwarded_port", guest: 80, host: 8080
+
+  # CPU et RAM minimum
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "pschemitS"
+    vb.cpus = 1
+    vb.memory = 1024
+  end
+
+  # Provisionnement automatique
+  config.vm.provision "shell", inline: <<-SHELL
+    # Mise à jour et outils nécessaires
+    sudo apt-get update -y
+    sudo apt-get install -y curl
+
+    # Installer K3s en mode server
+    curl -sfL https://get.k3s.io | sh -
+
+    # Autoriser kubectl sans sudo
+    sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+    export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+
+    # Attendre que K3s soit prêt
+    echo "Waiting for K3s to be ready..."
+    until kubectl get nodes &>/dev/null; do sleep 5; done
+
+    # Copier les manifests depuis l'hôte
+    cp -r /vagrant/confs /home/vagrant/
+    cd /home/vagrant/confs
+
+    # Appliquer les manifests des applications et de l'ingress
+    kubectl apply -f .
+
+    # Afficher un résumé
+    echo "Pods et ingress appliqués:"
+    kubectl get pods
+    kubectl get ingress
+  SHELL
+end
