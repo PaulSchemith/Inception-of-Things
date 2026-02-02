@@ -19,3 +19,25 @@ vagrant up --provider=virtualbox
 # P2
 vagrant up
 curl -H "Host: app1.com" http://192.168.56.110
+
+
+# P3
+
+# 1. Installer
+bash scripts/install.sh
+
+export KUBECONFIG=$(k3d kubeconfig write iot-cluster)
+
+
+# 2. Créer cluster
+bash scripts/cluster.sh
+
+# 3. Namespaces
+kubectl apply -f confs/namespace.yaml
+
+# 4. Installer Argo CD
+kubectl apply -n argocd \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# 5. Accéder à Argo
+kubectl port-forward svc/argocd-server -n argocd 8080:443
