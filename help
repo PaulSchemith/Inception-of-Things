@@ -1,43 +1,49 @@
+#!/bin/bash
+set -e
 
-# 1. Détruire les VMs existantes
-vagrant destroy -f
+CLUSTER_NAME="iot-cluster"
+PROJECT_DIR="/goinfre/pschemit/Inception-of-Things"
+KUBE_DIR="$PROJECT_DIR/.kube"
 
-# 3. Créer le dossier dans /goinfre
-mkdir -p "/goinfre/$USER/VirtualBoxVMs"
+echo "[+] Configuration..."
+mkdir -p "$KUBE_DIR"
+rm -rf ~/.kube 2>/dev/null || true
+ln -sf "$KUBE_DIR" ~/.kube
 
-# 4. Configurer VirtualBox pour utiliser ce dossier
-VBoxManage setproperty machinefolder "/goinfre/$USER/VirtualBoxVMs"
+echo "[+] Nettoyage total..."
+k3d cluster delete --all 2>/dev/null || true
+docker ps -aq --filter "name=k3d" | xargs docker rm -f 2>/dev/null || true
+docker network prune -f
+docker volume prune -f
 
-# 5. Vérifier la configuration
-VBoxManage list systemproperties | grep "Default machine folder"
+echo "[+] Création d'une image k3s patchée..."
+cat > /tmp/Dockerfile.k3s <<'EOF'
+FROM rancher/k3s:v1.24.17-k3s1
 
-# 6. Relancer Vagrant
-vagrant up --provider=virtualbox
+# Patch pour ignorer les cgroups v2
+RUN sed -i 's/failed to find cpu cgroup/warning: cpu cgroup not found/g' /bin/k3s || true
 
+ENTRYPOINT ["/bin/k3s"]
+EOF
 
+docker build -t k3s-patched:latest -f /tmp/Dockerfile.k3s /tmp
 
-# P2
-vagrant up
-curl -H "Host: app1.com" http://192.168.56.110
+echo "[+] Création du cluster avec l'image patchée..."
+k3d cluster create $CLUSTER_NAME \
+  --image k3s-patched:latest \
+  --api-port 6443 \
+  --servers 1 \
+  --agents 0 \
+  --port "8080:80@loadbalancer" \
+  --port "8443:443@loadbalancer"
 
+sleep 30
 
-# P3
+echo "[+] Configuration kubectl..."
+export KUBECONFIG="$KUBE_DIR/config"
+k3d kubeconfig merge $CLUSTER_NAME --kubeconfig-merge-default --kubeconfig-switch-context
 
-# 1. Installer
-bash scripts/install.sh
+echo "[+] Test..."
+kubectl get nodes -o wide
 
-export KUBECONFIG=$(k3d kubeconfig write iot-cluster)
-
-
-# 2. Créer cluster
-bash scripts/cluster.sh
-
-# 3. Namespaces
-kubectl apply -f confs/namespace.yaml
-
-# 4. Installer Argo CD
-kubectl apply -n argocd \
-  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-
-# 5. Accéder à Argo
-kubectl port-forward svc/argocd-server -n argocd 8080:443
+echo "✅ Cluster créé !"

@@ -1,62 +1,53 @@
 #!/bin/bash
 set -e
 
+# Configuration
 CLUSTER_NAME="iot-cluster"
 PROJECT_DIR="/goinfre/pschemit/Inception-of-Things"
 KUBE_DIR="$PROJECT_DIR/.kube"
 
-echo "[+] Configuration de l'environnement dans $PROJECT_DIR..."
-# 1. Crée le dossier .kube dans le projet
+# 1. Configuration de l'environnement
+echo "[+] Configuration de l'environnement..."
 mkdir -p "$KUBE_DIR"
-
-# 2. Crée un lien symbolique depuis ton home
+rm -rf ~/.kube 2>/dev/null || true
 ln -sf "$KUBE_DIR" ~/.kube
 
-# 3. Vérifie la config Docker
-echo "[+] Vérification de Docker Root Dir..."
-docker info | grep "Docker Root Dir"
+# 2. Nettoyage des ressources existantes
+echo "[+] Nettoyage des ressources existantes..."
+k3d cluster delete "$CLUSTER_NAME" 2>/dev/null || true
+docker ps -aq --filter "name=k3d-$CLUSTER_NAME" | xargs docker rm -f 2>/dev/null || true
+docker network prune -f
+docker volume prune -f
 
-echo "[+] Suppression de l'ancien cluster (s'il existe)..."
-k3d cluster delete $CLUSTER_NAME 2>/dev/null || true
-
-echo "[+] Nettoyage Docker..."
-docker system prune -f
-
-echo "[+] Création du cluster k3d..."
-k3d cluster create $CLUSTER_NAME \
+# 3. Création du cluster avec K3s v1.19.16 (sans cgroups v2)
+echo "[+] Création du cluster K3d avec K3s v1.19.16-k3s1 (sans cgroups v2)..."
+k3d cluster create "$CLUSTER_NAME" \
+  --image docker.io/rancher/k3s:v1.18.20-k3s1 \
   --api-port 6443 \
   --servers 1 \
   --agents 0 \
   --k3s-arg "--disable=traefik@server:0" \
   --port "8080:80@loadbalancer" \
-  --port "8443:443@loadbalancer"
+  --port "8443:443@loadbalancer" \
+  --wait
 
-echo "[+] Configuration kubectl..."
+# 4. Configuration de kubectl
+echo "[+] Configuration de kubectl..."
 export KUBECONFIG="$KUBE_DIR/config"
-k3d kubeconfig merge $CLUSTER_NAME --kubeconfig-merge-default --kubeconfig-switch-context
+k3d kubeconfig merge "$CLUSTER_NAME" --kubeconfig-merge-default --kubeconfig-switch-context
 
-echo "[+] Attente que le cluster soit prêt..."
-sleep 10
-
-echo "[+] Test de la connexion..."
+# 5. Vérification du cluster
+echo "[+] Vérification du cluster..."
+kubectl wait --for=condition=Ready nodes --all --timeout=120s
 kubectl get nodes -o wide
+kubectl get pods -A
 
+# 6. Message de succès
 echo ""
-echo "✅ Cluster créé avec succès !"
+echo "✅ Cluster K3d '$CLUSTER_NAME' créé avec succès !"
 echo ""
-echo "⚠️  IMPORTANT : Pour utiliser kubectl dans d'autres terminaux, exécute :"
-echo "    export KUBECONFIG=$KUBE_DIR/config"
+echo "📝 Pour utiliser kubectl dans d'autres terminaux :"
+echo "   export KUBECONFIG=$KUBE_DIR/config"
 echo ""
-echo "💡 Tu peux l'ajouter automatiquement à ton ~/.zshrc :"
-echo "    echo 'export KUBECONFIG=$KUBE_DIR/config' >> ~/.zshrc"
-```
-
-**Structure du projet après exécution :**
-```
-/goinfre/pschemit/Inception-of-Things/
-├── .kube/
-│   └── config          # Ton kubeconfig
-├── p3/
-│   └── scripts/
-│       └── cluster.sh  # Ce script
-└── ...
+echo "💡 Ajoutez cette ligne à votre ~/.zshrc pour persister la configuration :"
+echo "   echo 'export KUBECONFIG=$KUBE_DIR/config' >> ~/.zshrc"
