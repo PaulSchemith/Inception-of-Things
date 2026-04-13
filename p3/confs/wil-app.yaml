@@ -1,18 +1,55 @@
+# =============================================================================
+# Application Argo CD - Lien GitOps entre GitHub et le namespace "dev"
+# =============================================================================
+#
+# POURQUOI CE FICHIER :
+#   C'est le coeur du sujet P3 : le continuous deployment via GitOps.
+#
+#   Cette ressource "Application" (CRD d'Argo CD) dit a Argo CD :
+#   "Surveille ce repo GitHub, et applique automatiquement ses manifests
+#    Kubernetes dans le namespace dev."
+#
+# COMMENT CA MARCHE :
+#   1. Argo CD clone le repo GitHub (repoURL)
+#   2. Il lit les fichiers YAML dans le chemin specifie (path: .)
+#   3. Il applique ces manifests dans le namespace "dev" (destination)
+#   4. Avec syncPolicy.automated, il re-synchronise automatiquement
+#      quand le repo change (polling toutes les ~3 minutes par defaut)
+#
+# POUR CHANGER LA VERSION DE L'APPLICATION :
+#   1. Dans le repo GitHub, modifier deployment.yaml :
+#      image: wil42/playground:v1  →  image: wil42/playground:v2
+#   2. git add + commit + push
+#   3. Argo CD detecte le changement et synchronise
+#   4. curl http://localhost:8888 → {"status":"ok", "message": "v2"}
+#
+# L'APPLICATION wil42/playground :
+#   - Image Docker pre-faite disponible sur Docker Hub
+#   - 2 versions taggees : v1 et v2
+#   - Ecoute sur le port 8888
+#   - Repond avec un JSON : {"status":"ok", "message": "v1"} (ou "v2")
+#
+# =============================================================================
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: wil-app
-  namespace: argocd
+  namespace: argocd                           # Les Applications Argo CD vivent dans le namespace argocd
 spec:
-  project: default
+  project: default                            # Projet Argo CD par defaut (suffisant pour ce sujet)
+
   source:
+    # URL du repo GitHub public contenant les manifests Kubernetes.
+    # EXIGENCE DU SUJET : le nom du repo doit contenir le login d'un membre du groupe.
     repoURL: https://github.com/adiaz-uf/iot-argocd-alaparic-adiaz-uf.git
-    targetRevision: HEAD
-    path: .
+    targetRevision: HEAD                      # Suit la derniere revision (HEAD = dernier commit)
+    path: .                                   # Chemin dans le repo ou se trouvent les manifests YAML
+
   destination:
-    server: https://kubernetes.default.svc
-    namespace: dev
+    server: https://kubernetes.default.svc    # Cluster local (celui ou Argo CD est installe)
+    namespace: dev                            # Namespace cible pour deployer l'application
+
   syncPolicy:
-    automated:
-      prune: true
-      selfHeal: true
+    automated:                                # Synchronisation automatique (= continuous deployment)
+      prune: true                             # Supprime les ressources qui ne sont plus dans le repo
+      selfHeal: true                          # Re-applique si quelqu'un modifie manuellement le cluster

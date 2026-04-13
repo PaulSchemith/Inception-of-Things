@@ -1,16 +1,33 @@
+# =============================================================================
+# Service Argo CD Server - Expose l'interface web depuis le host
+# =============================================================================
+#
+# POURQUOI CE FICHIER :
+#   Par defaut, Argo CD cree un Service de type "ClusterIP" pour argocd-server.
+#   ClusterIP = accessible uniquement depuis l'interieur du cluster Kubernetes.
+#
+#   Pour acceder a l'interface web depuis le navigateur du host, on remplace
+#   ce Service par un "LoadBalancer" avec un nodePort fixe (31080).
+#
+#   Combinaison avec K3d :
+#   - K3d mappe localhost:31080 → nodePort 31080 du cluster
+#   - Ce Service route nodePort 31080 → port 8080 du pod argocd-server
+#   - Resultat : http://localhost:31080 → interface web Argo CD
+#
+# =============================================================================
 apiVersion: v1
 kind: Service
 metadata:
   name: argocd-server
-  namespace: argocd
+  namespace: argocd                           # Doit etre dans le namespace argocd
   labels:
-    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/name: argocd-server     # Label standard d'Argo CD
 spec:
-  type: LoadBalancer
+  type: LoadBalancer                          # Expose le service a l'exterieur du cluster
   ports:
-  - name: http
-    port: 80
-    targetPort: 8080
-    nodePort: 31080 # Accesible from host
+    - name: http
+      port: 80                                # Port du Service (interne cluster)
+      targetPort: 8080                        # Port sur lequel le pod argocd-server ecoute
+      nodePort: 31080                         # Port fixe expose sur chaque node (accessible depuis host via K3d)
   selector:
-    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/name: argocd-server     # Selectionne les pods Argo CD server
