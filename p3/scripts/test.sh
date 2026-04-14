@@ -149,9 +149,10 @@ else
 fi
 
 # Test d'accessibilite de l'interface web Argo CD
-# curl vers localhost:31080 doit retourner du HTML contenant "argo"
+# Argo CD redirige HTTP → HTTPS (avec cert auto-signe).
+# -L : suit les redirections   -k : ignore les erreurs SSL
 if wait_for_cmd "Interface Argo CD accessible" \
-    "curl -s --max-time 3 $ARGOCD_URL | grep -qi 'argo'"; then
+    "curl -skL --max-time 5 $ARGOCD_URL | grep -qi 'argo'"; then
     pass "Interface web Argo CD accessible sur $ARGOCD_URL"
 else
     fail "Interface web Argo CD non accessible sur $ARGOCD_URL"
