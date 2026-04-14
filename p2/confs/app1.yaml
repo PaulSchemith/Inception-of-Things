@@ -1,46 +1,94 @@
+# =============================================================================
+# app1.yaml - Deployment + ConfigMap + Service pour l'application 1
+# =============================================================================
+#
+# CE FICHIER CONTIENT 3 RESSOURCES KUBERNETES (separees par ---) :
+#
+# 1. Deployment   → gere les pods (instances de l'application)
+# 2. ConfigMap    → stocke la page HTML servie par nginx
+# 3. Service      → expose les pods en interne au cluster
+#
+# SCHEMA :
+#   Deployment (cree des pods nginx)
+#       ↓ monte
+#   ConfigMap (contient index.html)
+#       ↓ sert via
+#   Service (expose port 80 en interne)
+#       ↓ recu via
+#   Ingress (regle : Host: app1.com → service app1)
+#
+# ROUTAGE :
+#   curl -H "Host: app1.com" http://localhost:8081 → APP1
+#
+# =============================================================================
+
+# --- RESSOURCE 1 : Deployment ---
+# Un Deployment declare "je veux X replicas de ce pod en permanence".
+# Kubernetes (via le ReplicaSet cree automatiquement) s'assure que le bon
+# nombre de pods tourne a tout moment. Si un pod crash, il est rerecree.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: app1
+  name: app1   # Nom du Deployment (utilise par kubectl get deployment app1)
 spec:
-  replicas: 1
+  replicas: 1  # 1 seul pod pour app1 (le sujet n'impose pas de nombre)
   selector:
     matchLabels:
-      app: app1
+      app: app1  # Le Deployment gere les pods qui ont ce label
   template:
+    # template decrit le pod qui sera cree
     metadata:
       labels:
-        app: app1
+        app: app1  # Label applique au pod (doit correspondre au selector ci-dessus)
     spec:
       containers:
         - name: app1
-          image: nginx:alpine
+          image: nginx:alpine   # Image Docker legere (nginx sur Alpine Linux ~20MB)
           ports:
-            - containerPort: 80
+            - containerPort: 80  # Port sur lequel nginx ecoute dans le container
           volumeMounts:
+            # Monte le volume "html" dans le dossier de contenu nginx.
+            # Nginx sert les fichiers de ce dossier quand on fait une requete HTTP.
             - name: html
               mountPath: /usr/share/nginx/html
       volumes:
+        # Volume alimente par le ConfigMap ci-dessous.
+        # ConfigMap → volume → monte dans le container = nginx sert notre HTML.
         - name: html
           configMap:
-            name: app1-html
+            name: app1-html  # Nom du ConfigMap defini ci-dessous
+
 ---
+# --- RESSOURCE 2 : ConfigMap ---
+# Un ConfigMap stocke des donnees de configuration sous forme de paires cle/valeur.
+# Ici, on l'utilise pour stocker la page HTML servie par nginx.
+# Avantage : pas besoin de creer une image Docker personnalisee juste pour changer
+# le contenu HTML, on peut le modifier sans rebuild d'image.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: app1-html
+  name: app1-html   # Ce nom est reference dans le volume du Deployment ci-dessus
 data:
+  # La cle "index.html" devient un fichier /usr/share/nginx/html/index.html dans le pod.
+  # Nginx sert ce fichier quand on acces a la racine "/".
   index.html: |
     <h1>Bienvenue sur APP1 !</h1>
+
 ---
+# --- RESSOURCE 3 : Service ---
+# Un Service expose les pods du Deployment a l'interieur du cluster.
+# Sans Service, les pods ne sont accessibles que par leur IP (qui change a chaque recreation).
+# Avec un Service, on accede aux pods par un nom DNS stable : "app1" → IP du pod.
+#
+# L'Ingress utilisera ce Service comme backend pour les requetes "Host: app1.com".
 apiVersion: v1
 kind: Service
 metadata:
-  name: app1
+  name: app1   # Nom DNS interne : les autres pods peuvent faire http://app1
 spec:
   selector:
-    app: app1
+    app: app1  # Route le trafic vers les pods avec ce label (= les pods du Deployment)
   ports:
     - protocol: TCP
-      port: 80
-      targetPort: 80
+      port: 80        # Port du Service (celui que l'Ingress cible)
+      targetPort: 80  # Port du container (doit correspondre a containerPort)

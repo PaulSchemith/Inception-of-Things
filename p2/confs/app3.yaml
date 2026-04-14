@@ -1,9 +1,31 @@
+# =============================================================================
+# app3.yaml - Deployment + ConfigMap + Service pour l'application 3
+# =============================================================================
+#
+# ROLE SPECIAL D'APP3 :
+#   App3 est l'application par defaut (catch-all).
+#   L'Ingress la sert quand aucune regle de host ne correspond :
+#     - Host: app1.com → app1
+#     - Host: app2.com → app2
+#     - Host: n'importe quoi d'autre (ou absent) → app3
+#
+# POURQUOI UN CATCH-ALL ?
+#   C'est une bonne pratique : plutot que de renvoyer une erreur 404 pour
+#   les requetes non reconnues, on redirige vers une page d'accueil.
+#   Demonstre aussi la notion de regle Ingress "sans host" dans Kubernetes.
+#
+# ROUTAGE :
+#   curl http://localhost:8081              → APP3 (pas de Host header)
+#   curl -H "Host: random.com" localhost:8081 → APP3 (host inconnu)
+#
+# =============================================================================
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: app3
 spec:
-  replicas: 1
+  replicas: 1   # 1 replica suffit pour l'app de defaut
   selector:
     matchLabels:
       app: app3
@@ -24,6 +46,7 @@ spec:
         - name: html
           configMap:
             name: app3-html
+
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -32,6 +55,7 @@ metadata:
 data:
   index.html: |
     <h1>Bienvenue sur APP3 !</h1>
+
 ---
 apiVersion: v1
 kind: Service

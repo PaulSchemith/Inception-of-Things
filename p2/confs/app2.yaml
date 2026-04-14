@@ -1,8 +1,30 @@
+# =============================================================================
+# app2.yaml - Deployment + ConfigMap + Service pour l'application 2
+# =============================================================================
+#
+# DIFFERENCE PRINCIPALE AVEC APP1 :
+#   app2 a 3 replicas au lieu de 1.
+#   Le sujet impose explicitement 3 replicas pour app2.
+#
+# POURQUOI PLUSIEURS REPLICAS ?
+#   - Haute disponibilite : si un pod crash, les 2 autres continuent a repondre
+#   - Load balancing : le Service repartit les requetes entre les 3 pods
+#   - Scalabilite : on peut augmenter les replicas sans downtime
+#
+# ROUTAGE :
+#   curl -H "Host: app2.com" http://localhost:8081 → APP2
+#   (Les 3 pods repondent tous la meme chose, le Service fait du round-robin)
+#
+# =============================================================================
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: app2
 spec:
+  # 3 replicas = 3 pods identiques tournent en meme temps.
+  # Le ReplicaSet surveille en permanence : si un pod est supprime ou crash,
+  # il en recrée un nouveau automatiquement pour maintenir le compte a 3.
   replicas: 3
   selector:
     matchLabels:
@@ -24,6 +46,7 @@ spec:
         - name: html
           configMap:
             name: app2-html
+
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -32,7 +55,11 @@ metadata:
 data:
   index.html: |
     <h1>Bienvenue sur APP2 !</h1>
+
 ---
+# Le Service route vers n'importe quel pod avec label app=app2.
+# Comme il y a 3 pods, le Service fait du load balancing entre eux
+# (algorithme round-robin par defaut dans kube-proxy).
 apiVersion: v1
 kind: Service
 metadata:

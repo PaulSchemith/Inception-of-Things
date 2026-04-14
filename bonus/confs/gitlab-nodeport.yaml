@@ -1,0 +1,49 @@
+# =============================================================================
+# gitlab-nodeport.yaml - Expose GitLab depuis le host via un NodePort
+# =============================================================================
+#
+# POURQUOI CE SERVICE SUPPLEMENTAIRE ?
+#   Le chart Helm GitLab cree le Service "gitlab-webservice-default" en mode
+#   ClusterIP par defaut (accessible uniquement a l'interieur du cluster).
+#   Pour acceder a GitLab depuis le navigateur du host, on cree un nouveau
+#   Service de type NodePort qui route vers les memes pods.
+#
+# SCHEMA DE ROUTAGE :
+#
+#   Navigateur host
+#       ↓ http://localhost:8929
+#   K3d LoadBalancer (port 8929 → nodePort 30929)
+#       ↓
+#   Ce Service NodePort (port 8181 → pod webservice port 8181)
+#       ↓
+#   Pod gitlab-webservice (Rails + Workhorse)
+#
+# NOTE SUR LES PORTS GITLAB :
+#   Le pod webservice expose deux ports :
+#   - 8080 : puma (Rails app server interne)
+#   - 8181 : workhorse (proxy reverse interne, c'est lui qui recoit les requetes)
+#   On utilise le port 8181 (workhorse) car c'est le point d'entree HTTP standard.
+#
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: gitlab-webservice-nodeport
+  namespace: gitlab   # Meme namespace que les pods GitLab
+spec:
+  type: NodePort
+
+  # Selectionne les pods du webservice GitLab.
+  # Ces labels sont appliques par le chart Helm gitlab/gitlab.
+  # On peut les verifier avec : kubectl get pods -n gitlab --show-labels
+  selector:
+    app: webservice
+    gitlab.com/webservice-name: default
+
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8181         # Port du Service interne
+      targetPort: 8181   # Port sur lequel le pod webservice ecoute (workhorse)
+      nodePort: 30929    # Port expose sur chaque node K3d
+                         # K3d mappe localhost:8929 → nodePort 30929

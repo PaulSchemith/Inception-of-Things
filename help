@@ -1,95 +1,78 @@
+# =============================================================================
+# AIDE RAPIDE - Inception of Things (IoT)
+# =============================================================================
+#
+# Ce fichier est un aide-memoire des commandes utiles par partie.
+# Pour demarrer une partie, cd dans le bon dossier et consulte le Makefile.
+#
+# =============================================================================
 
-# 1. Détruire les VMs existantes
-vagrant destroy -f
+# --- PREREQUIS COMMUNS ---
+# Sur les machines 42, Vagrant n'est pas installe par defaut.
+# Installer Vagrant dans ~/bin (sans root) :
+bash install_vagrant.sh
 
-# 3. Créer le dossier dans /goinfre
+# VirtualBox doit stocker ses VMs dans goinfre (disque local temporaire) :
 mkdir -p "/goinfre/$USER/VirtualBoxVMs"
-
-# 4. Configurer VirtualBox pour utiliser ce dossier
 VBoxManage setproperty machinefolder "/goinfre/$USER/VirtualBoxVMs"
 
-# 5. Vérifier la configuration
-VBoxManage list systemproperties | grep "Default machine folder"
-#!/bin/bash
-set -e
+
+# =============================================================================
+# P1 - Cluster K3s avec 2 VMs (server + worker)
+# =============================================================================
+
+cd p1
+
+make          # Tout faire : detruire + setup + demarrer les VMs
+make status   # Voir si les VMs tournent
+make ssh-server  # Se connecter au serveur en SSH
+make ssh-worker  # Se connecter au worker en SSH
+make test     # Verifier que tout est conforme au sujet
+make logs-server  # Suivre les logs de boot du serveur
+
+# Verifier le cluster depuis le serveur :
+# sudo kubectl get nodes   → doit afficher loginS + loginSW en "Ready"
 
 
+# =============================================================================
+# P2 - K3s avec 1 VM + 3 apps + Ingress
+# =============================================================================
+
+cd p2
+
+make          # Tout faire
+make status   # Voir si la VM tourne
+make ssh      # Se connecter en SSH
+make test     # Verifier le routage HTTP
+make deploy   # Redeployer les manifests sans recrer la VM
+
+# Tester le routage depuis le host :
+curl -H "Host: app1.com" http://localhost:8081   # → APP1
+curl -H "Host: app2.com" http://localhost:8081   # → APP2
+curl http://localhost:8081                        # → APP3 (catch-all)
 
 
+# =============================================================================
+# P3 - K3d + Argo CD (Continuous Deployment)
+# =============================================================================
 
-CLUSTER_NAME="iot-cluster"
-PROJECT_DIR="/goinfre/pschemit/Inception-of-Things"
-KUBE_DIR="$PROJECT_DIR/.kube"
+cd p3
 
-echo "[+] Configuration..."
-mkdir -p "$KUBE_DIR"
-rm -rf ~/.kube 2>/dev/null || true
-ln -sf "$KUBE_DIR" ~/.kube
+make setup    # Installer Docker, K3d, kubectl, argocd CLI
+make          # Creer le cluster K3d et deployer Argo CD + l'app
+make test     # Verifier que tout fonctionne
+make password # Afficher le mot de passe admin Argo CD
+make status   # Voir l'etat du cluster et des pods
+make re       # Tout reconstruire depuis zero
 
-echo "[+] Nettoyage total..."
-k3d cluster delete --all 2>/dev/null || true
-docker ps -aq --filter "name=k3d" | xargs docker rm -f 2>/dev/null || true
-docker network prune -f
-docker volume prune -f
+# Acceder a l'interface Argo CD :
+# http://localhost:31080  (login: admin / password: make password)
 
-echo "[+] Création d'une image k3s patchée..."
-cat > /tmp/Dockerfile.k3s <<'EOF'
-FROM rancher/k3s:v1.24.17-k3s1
+# Tester l'application deployee :
+curl http://localhost:8888   # → {"status":"ok", "message": "v1"}
 
-# Patch pour ignorer les cgroups v2
-RUN sed -i 's/failed to find cpu cgroup/warning: cpu cgroup not found/g' /bin/k3s || true
-
-ENTRYPOINT ["/bin/k3s"]
-EOF
-
-docker build -t k3s-patched:latest -f /tmp/Dockerfile.k3s /tmp
-
-echo "[+] Création du cluster avec l'image patchée..."
-k3d cluster create $CLUSTER_NAME \
-  --image k3s-patched:latest \
-  --api-port 6443 \
-  --servers 1 \
-  --agents 0 \
-  --port "8080:80@loadbalancer" \
-  --port "8443:443@loadbalancer"
-
-sleep 30
-
-echo "[+] Configuration kubectl..."
-export KUBECONFIG="$KUBE_DIR/config"
-k3d kubeconfig merge $CLUSTER_NAME --kubeconfig-merge-default --kubeconfig-switch-context
-
-echo "[+] Test..."
-kubectl get nodes -o wide
-
-echo "✅ Cluster créé !"
-# 6. Relancer Vagrant
-vagrant up --provider=virtualbox
-
-
-
-# P2
-vagrant up
-curl -H "Host: app1.com" http://192.168.56.110
-
-
-# P3
-
-# 1. Installer
-bash scripts/install.sh
-
-export KUBECONFIG=$(k3d kubeconfig write iot-cluster)
-
-
-# 2. Créer cluster
-bash scripts/cluster.sh
-
-# 3. Namespaces
-kubectl apply -f confs/namespace.yaml
-
-# 4. Installer Argo CD
-kubectl apply -n argocd \
-  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-
-# 5. Accéder à Argo
-kubectl port-forward svc/argocd-server -n argocd 8080:443
+# Changer la version (demo du sujet) :
+# 1. Modifier p3/confs/wil-app.yaml dans le repo GitHub : v1 → v2
+# 2. git push
+# 3. Attendre ~3min que Argo CD synchronise
+# 4. curl http://localhost:8888  → {"status":"ok", "message": "v2"}

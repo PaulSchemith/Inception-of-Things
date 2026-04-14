@@ -1,0 +1,63 @@
+# =============================================================================
+# deployment.yaml - Application wil42/playground deployee par Argo CD
+# =============================================================================
+#
+# CE FICHIER EST STOCKE DANS GITLAB, PAS DANS CE REPO.
+# Il est pousse automatiquement dans GitLab par deploy.sh via l'API GitLab.
+# Argo CD le lit depuis GitLab et l'applique dans le namespace "dev".
+#
+# C'EST LE COEUR DU BONUS :
+#   GitHub (P3) est remplace par GitLab local.
+#   Ce fichier joue le meme role que deployment.yaml dans le repo GitHub de P3.
+#
+# POUR CHANGER LA VERSION (demo du sujet) :
+#   Option A - Via l'API GitLab :
+#     Modifier le tag v1 → v2 dans ce fichier via l'UI GitLab (localhost:8929)
+#     Argo CD detecte le commit et synchronise automatiquement.
+#
+#   Option B - Via le script :
+#     make switch-v2   # change v1 → v2 dans GitLab et attend la synchro
+#     curl http://localhost:8888  → {"status":"ok", "message": "v2"}
+#
+# =============================================================================
+
+# --- DEPLOYMENT : gere les pods de l'application ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wil-playground
+  namespace: dev
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: wil-playground
+  template:
+    metadata:
+      labels:
+        app: wil-playground
+    spec:
+      containers:
+        - name: wil-playground
+          # Image Docker de Wil : repond {"status":"ok","message":"v1"} ou "v2"
+          # CHANGER ICI pour tester le continuous deployment : v1 → v2
+          image: wil42/playground:v1
+          ports:
+            - containerPort: 8888
+
+---
+# --- SERVICE : expose l'application via le LoadBalancer K3d ---
+# Type LoadBalancer = K3d route le port 8888 du host vers ce service.
+# Le port mapping K3d "-p 8888:8888@loadbalancer" fait le reste.
+apiVersion: v1
+kind: Service
+metadata:
+  name: wil-playground
+  namespace: dev
+spec:
+  type: LoadBalancer
+  selector:
+    app: wil-playground
+  ports:
+    - port: 8888
+      targetPort: 8888

@@ -1,0 +1,181 @@
+# =============================================================================
+# gitlab-values.yaml - Configuration Helm pour GitLab CE (edition minimale)
+# =============================================================================
+#
+# QU'EST-CE QUE CE FICHIER ?
+#   Le chart Helm officiel "gitlab/gitlab" deploie une trentaine de composants.
+#   Ce fichier "values" surcharge les valeurs par defaut pour n'installer que
+#   le strict minimum sur nos 8 Go de RAM.
+#
+# COMPOSANTS DESACTIVES :
+#   - nginx-ingress  : K3s a deja Traefik comme Ingress Controller
+#   - certmanager    : pas de TLS en local
+#   - prometheus     : monitoring, hors sujet et lourd
+#   - gitlab-runner  : pipeline CI/CD, on utilise Argo CD a la place
+#   - registry       : registre Docker integre, hors sujet
+#
+# COMPOSANTS ACTIFS (minimum viable) :
+#   - webservice     : interface web + API REST + Git over HTTP
+#   - sidekiq        : worker asynchrone (emails, webhooks...)
+#   - gitaly         : stockage Git (le "filesystem" pour les repos)
+#   - gitlab-shell   : acces SSH aux repos
+#   - toolbox        : pod maintenance (REQUIS pour gitlab-rails runner)
+#   - postgresql     : base de donnees (users, projects, issues...)
+#   - redis          : cache + file de messages pour sidekiq
+#   - minio          : stockage objet S3 (avatars, uploads, artefacts...)
+#
+# =============================================================================
+
+# --- CONFIGURATION GLOBALE ---
+global:
+  edition: ce   # Community Edition (gratuit, open-source)
+
+  hosts:
+    # On pointe vers localhost car K3d mappe les ports localement.
+    # GitLab utilise ce domaine pour generer les URLs de clone, webhooks, etc.
+    domain: localhost
+    https: false       # Pas de TLS en developpement local
+    gitlab:
+      name: localhost
+      https: false
+
+  # URL externe complete = ce que voit le navigateur du host.
+  # K3d mappe host:8929 → NodePort K8s → pod webservice (port 8181).
+  externalUrl: "http://localhost:8929"
+
+  # Mot de passe root stocke dans un Secret Kubernetes.
+  # Ce Secret est cree par deploy.sh AVANT helm install.
+  # GitLab lit ce Secret lors des migrations initiales pour initialiser
+  # le compte administrateur "root".
+  initialRootPassword:
+    secret: gitlab-initial-root-password
+    key: password
+
+  ingress:
+    # Desactive l'Ingress interne de GitLab.
+    # K3s/Traefik gere l'Ingress, mais on expose GitLab via un Service NodePort
+    # cree manuellement (gitlab-nodeport.yaml).
+    configureCertmanager: false
+    enabled: false
+
+# cert-manager : gestionnaire de certificats TLS automatiques (Let's Encrypt).
+# Pas utile en local sans domaine reel.
+certmanager:
+  install: false
+certmanager-issuer:
+  # Email factice requis par le chart meme quand certmanager est desactive
+  email: admin@local.example
+
+# nginx-ingress : proxy HTTP embarque dans le chart GitLab.
+# On ne l'utilise pas car Traefik (K3s) joue ce role.
+nginx-ingress:
+  enabled: false
+
+# prometheus + grafana : monitoring du cluster.
+# Hors sujet et tres lourd en RAM.
+prometheus:
+  install: false
+
+# gitlab-runner : agent CI/CD GitLab.
+# On utilise Argo CD pour le deploiement continu, pas GitLab CI.
+gitlab-runner:
+  install: false
+
+# registry : registre d'images Docker integre a GitLab.
+# On utilise Docker Hub, pas le registre local.
+registry:
+  enabled: false
+
+# --- COMPOSANTS ACTIFS ---
+
+gitlab:
+  # WEBSERVICE : le cœur de GitLab
+  # - Interface web (Ruby on Rails + Puma)
+  # - API REST v4 (/api/v4/...)
+  # - Workhorse (proxy inverse en Go, gere les gros uploads/downloads Git)
+  webservice:
+    replicaCount: 1    # Un seul pod (pas de HA en dev local)
+    minReplicas: 1
+    maxReplicas: 1
+    resources:
+      requests:
+        cpu: 300m
+        memory: 1.5Gi  # Rails + Puma workers = gros consommateur de RAM
+      limits:
+        cpu: "2"
+        memory: 2.5Gi
+
+  # SIDEKIQ : worker de taches asynchrones
+  # Traite la file de jobs : envoi d'emails, webhooks, reindexation...
+  sidekiq:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 625Mi
+
+  # GITALY : service de stockage Git
+  # Toutes les operations git (clone, push, fetch) passent par Gitaly.
+  # Il communique avec les pods webservice et shell via gRPC.
+  gitaly:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+
+  # GITLAB-SHELL : acces SSH aux repos
+  # Gere "git clone git@localhost:root/iot-wil-app.git"
+  gitlab-shell:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 0
+        memory: 6Mi
+
+  # TOOLBOX : pod utilitaire pour operations de maintenance
+  # IMPORTANT : requis pour executer "gitlab-rails runner" (automation).
+  # C'est via ce pod qu'on cree le Personal Access Token programmatiquement.
+  # Le toolbox est le seul endroit officiel pour executer des commandes Rails
+  # dans le chart cloud-native (le webservice ne permet pas ca).
+  toolbox:
+    enabled: true
+    resources:
+      requests:
+        cpu: 50m
+        memory: 200Mi
+
+  # MIGRATIONS : Job Kubernetes one-shot
+  # Execute les migrations de base de donnees au premier demarrage.
+  # Doit se terminer AVANT que webservice et sidekiq puissent demarrer.
+  migrations:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 200Mi
+
+# POSTGRESQL : base de donnees relationnelle
+# Stocke : users, projets, issues, merge requests, permissions...
+postgresql:
+  primary:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+# REDIS : base NoSQL en memoire
+# Utilise pour : cache Rails, sessions, file Sidekiq, pub/sub...
+redis:
+  master:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+
+# MINIO : stockage objet S3-compatible
+# Stocke : avatars, pieces-jointes, artefacts CI, backup...
+minio:
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi

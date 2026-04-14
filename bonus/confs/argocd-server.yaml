@@ -1,0 +1,29 @@
+# =============================================================================
+# argocd-server.yaml - Expose Argo CD depuis le host via NodePort
+# =============================================================================
+#
+# Identique au fichier p3/confs/argocd-server.yaml.
+# On le duplique ici pour que le bonus soit autonome (sans dependance vers p3).
+#
+# Argo CD redirige HTTP → HTTPS (certificat auto-signe).
+# Pour acceder a l'UI : https://localhost:31080
+#   - Accepter l'avertissement de securite du navigateur
+#   - Login : admin / Password : make password
+#
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: argocd-server
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-server
+spec:
+  type: LoadBalancer
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080    # Port interne du pod argocd-server
+      nodePort: 31080     # K3d mappe localhost:31080 → ce nodePort
+  selector:
+    app.kubernetes.io/name: argocd-server

@@ -1,19 +1,64 @@
+# =============================================================================
+# ingress.yaml - Routage HTTP par nom de domaine (Ingress Controller)
+# =============================================================================
+#
+# QU'EST-CE QU'UN INGRESS ?
+#   Un Ingress est une ressource Kubernetes qui definit des regles de routage
+#   HTTP/HTTPS. Il fait office de reverse proxy intelligent a l'entree du cluster.
+#
+#   Sans Ingress : chaque Service a son propre port expose → chaos de ports
+#   Avec Ingress : un seul point d'entree (port 80), le routage se fait par
+#                  le header HTTP "Host" de la requete.
+#
+# INGRESS CONTROLLER :
+#   Le fichier YAML defini les regles, mais c'est l'Ingress Controller qui les
+#   applique. K3s inclut Traefik comme Ingress Controller par defaut.
+#   Traefik surveille les ressources Ingress et configure son routage automatiquement.
+#
+# ARCHITECTURE :
+#
+#   Requete HTTP
+#       ↓
+#   Traefik (Ingress Controller, port 80)
+#       ↓ lit le header "Host"
+#   ┌─────────────────────────────────────┐
+#   │ Host: app1.com  → Service app1 :80  │
+#   │ Host: app2.com  → Service app2 :80  │
+#   │ Host: *         → Service app3 :80  │  (catch-all : tout le reste)
+#   └─────────────────────────────────────┘
+#
+# TEST DEPUIS LE HOST :
+#   curl -H "Host: app1.com" http://localhost:8081  → APP1
+#   curl -H "Host: app2.com" http://localhost:8081  → APP2
+#   curl -H "Host: random"   http://localhost:8081  → APP3
+#   curl http://localhost:8081                      → APP3
+#
+# =============================================================================
+
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: ingress
+  name: ingress   # Un seul Ingress contient toutes les regles
 spec:
   rules:
+
+    # --- REGLE 1 : app1.com → Service app1 ---
+    # Quand le header HTTP "Host: app1.com" est present, Traefik route
+    # la requete vers le Service "app1" sur le port 80.
     - host: app1.com
       http:
         paths:
-          - path: /
-            pathType: Prefix
+          - path: /            # Toutes les URLs (/, /page, /api, ...)
+            pathType: Prefix   # "Prefix" = match si l'URL commence par ce path
             backend:
               service:
-                name: app1
+                name: app1     # Nom du Service Kubernetes cible
                 port:
                   number: 80
+
+    # --- REGLE 2 : app2.com → Service app2 ---
+    # Meme principe pour app2. Les 3 replicas de app2 recoivent le trafic
+    # en round-robin via le Service.
     - host: app2.com
       http:
         paths:
@@ -24,7 +69,11 @@ spec:
                 name: app2
                 port:
                   number: 80
-    # Règle sans host = catch-all : tout hôte non reconnu → app3 (défaut du sujet)
+
+    # --- REGLE 3 : catch-all → Service app3 ---
+    # Regle SANS "host" = s'applique a toutes les requetes dont le Host header
+    # ne correspond a aucune regle precedente (ou absent).
+    # C'est l'application par defaut du sujet.
     - http:
         paths:
           - path: /
