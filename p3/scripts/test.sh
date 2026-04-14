@@ -44,9 +44,9 @@ TESTS_PASS=0
 TESTS_FAIL=0
 
 # Fonctions d'affichage
-pass() { echo -e "${GREEN}[PASS]${RESET} $1"; TESTS_PASS=$((TESTS_PASS + 1)); }
-fail() { echo -e "${RED}[FAIL]${RESET} $1"; TESTS_FAIL=$((TESTS_FAIL + 1)); }
-wait_msg() { echo -e "${YELLOW}[....]${RESET} $1"; }
+pass() { echo -e "${GREEN}[✓]${RESET} $1"; TESTS_PASS=$((TESTS_PASS + 1)); }
+fail() { echo -e "${RED}[✗]${RESET} $1"; TESTS_FAIL=$((TESTS_FAIL + 1)); }
+wait_msg() { echo -e "${YELLOW}[…]${RESET} $1"; }
 
 # =============================================================================
 # FONCTION D'ATTENTE GENERIQUE
