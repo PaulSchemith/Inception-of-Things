@@ -198,7 +198,10 @@ kubectl create namespace "$DEV_NS" 2>/dev/null || true
 #   - argocd-dex-server      : authentification (SSO)
 #   - argocd-redis            : cache interne
 echo "[3/6] Installation d'Argo CD..."
-kubectl apply -n "$ARGOCD_NS" -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+# --server-side est necessaire : les CRDs d'Argo CD sont trop grandes pour
+# etre stockees dans les annotations kubectl (limite 262144 bytes).
+# L'option server-side apply deleste le stockage du manifest cote API server.
+kubectl apply --server-side -n "$ARGOCD_NS" -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
 
 # =============================================================================
 # ETAPE 4 : Attente du demarrage d'Argo CD
