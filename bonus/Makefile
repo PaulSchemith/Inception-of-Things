@@ -48,6 +48,7 @@ all: up
 # Installe helm, docker, k3d, kubectl + configure les cgroups
 setup:
 	@echo "Installation des prerequis..."
+	# Lance le script d'installation des dépendances nécessaires.
 	@bash scripts/setup.sh
 
 # --- Deploiement complet ---
@@ -55,17 +56,20 @@ setup:
 # et lance le continuous deployment.
 up:
 	@echo "Deploiement infrastructure bonus..."
+	# Lance le script principal qui déploie GitLab, Argo CD et l'application.
 	@GITLAB_ROOT_PASSWORD="$(GITLAB_ROOT_PASSWORD)" bash scripts/deploy.sh
 
 # --- Tests de validation ---
 # Verifie tous les criteres du sujet : namespaces, GitLab, Argo CD, app HTTP.
 test:
 	@echo "Lancement des tests bonus..."
+	# Exécute les tests de validation du bonus.
 	@bash scripts/test.sh
 
 # --- Destruction du cluster ---
 clean:
 	@echo "Destruction du cluster K3d..."
+	# Supprime le cluster K3d bonus s'il est présent.
 	@k3d cluster delete mycluster || true
 
 # --- Reconstruction complete ---
@@ -74,26 +78,33 @@ re: clean up
 # --- Etat de l'infrastructure ---
 status:
 	@echo "=== Cluster K3d ==="
+	# Liste les clusters K3d visibles localement.
 	@k3d cluster list 2>/dev/null || echo "aucun cluster"
 	@echo ""
 	@echo "=== Nodes ==="
+	# Affiche les nodes Kubernetes du cluster actif.
 	@kubectl get nodes 2>/dev/null || echo "cluster inactif"
 	@echo ""
 	@echo "=== Pods GitLab ==="
+	# Affiche les pods du namespace GitLab.
 	@kubectl get pods -n $(GITLAB_NS) 2>/dev/null || echo "namespace gitlab introuvable"
 	@echo ""
 	@echo "=== Pods Argo CD ==="
+	# Affiche les pods du namespace Argo CD.
 	@kubectl get pods -n $(ARGOCD_NS) 2>/dev/null || echo "namespace argocd introuvable"
 	@echo ""
 	@echo "=== Pods dev ==="
+	# Affiche les pods de l'application finale.
 	@kubectl get pods -n dev 2>/dev/null || echo "namespace dev introuvable"
 	@echo ""
 	@echo "=== Application Argo CD ==="
+	# Affiche l'objet Application Argo CD qui pilote le déploiement.
 	@kubectl get application wil-app -n $(ARGOCD_NS) -o wide 2>/dev/null || echo "application introuvable"
 
 # --- Mot de passe Argo CD ---
 password:
 	@echo "Mot de passe admin Argo CD :"
+	# Récupère le mot de passe initial stocké dans le Secret Argo CD.
 	@kubectl get secret argocd-initial-admin-secret -n $(ARGOCD_NS) \
 		-o jsonpath="{.data.password}" 2>/dev/null | base64 -d && echo \
 		|| echo "Argo CD non installe"
@@ -104,25 +115,31 @@ password:
 # Verifie avec : curl http://localhost:8888
 switch-v2:
 	@echo "Changement v1 → v2 dans GitLab..."
+	# Modifie le dépôt GitLab pour forcer un nouveau déploiement.
 	@bash scripts/switch-version.sh v2
 	@echo ""
 	@echo "Attente de la synchro Argo CD..."
+	# Attend que l'Application Argo CD soit resynchronisée.
 	@kubectl wait --for=jsonpath='{.status.sync.status}'=Synced \
 		application/wil-app -n $(ARGOCD_NS) --timeout=300s 2>/dev/null || true
 	@echo ""
 	@echo "Version active :"
+	# Vérifie la version exposée par l'application.
 	@curl -s http://localhost:8888 || echo "(app pas encore prete)"
 
 # --- Demo : retour a v1 ---
 switch-v1:
 	@echo "Changement v2 → v1 dans GitLab..."
+	# Revient à la version précédente dans le dépôt GitLab.
 	@bash scripts/switch-version.sh v1
 	@echo ""
 	@echo "Attente de la synchro Argo CD..."
+	# Attend que l'Application Argo CD soit resynchronisée.
 	@kubectl wait --for=jsonpath='{.status.sync.status}'=Synced \
 		application/wil-app -n $(ARGOCD_NS) --timeout=300s 2>/dev/null || true
 	@echo ""
 	@echo "Version active :"
+	# Vérifie la version exposée par l'application.
 	@curl -s http://localhost:8888 || echo "(app pas encore prete)"
 
 .PHONY: all setup up test clean re status password switch-v1 switch-v2

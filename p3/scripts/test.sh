@@ -19,6 +19,31 @@
 #   make test   (ou bash scripts/test.sh)
 #
 # =============================================================================
+# ==============================================================================
+# P3 - TEST SCRIPT
+# ==============================================================================
+#
+# BUT : Valider que l'infrastructure Inception of Things - Part 3 est OK.
+#
+# CONTEXTE : Cluster K3d local (docker-based, pas QEMU) avec :
+#            • K3d cluster 'mycluster' (3 nodes par défaut)
+#            • Argo CD (GitOps operator) dans namespace 'argocd'
+#            • App wil-playground dans namespace 'dev' (deployée via GitOps)
+#            • Source: GitHub repo (wil42/playground manifest)
+#
+# TESTS EFFECTUES :
+#   1. Outils prerequis (docker, k3d, kubectl, curl)
+#   2. Cluster K3d existant et opérationnel (≥ 1 node Ready)
+#   3. Namespaces 'argocd' et 'dev' actifs
+#   4. Argo CD server déployé et UI accessible
+#   5. Application Argo CD 'wil-app' existe et est Synced + Healthy
+#   6. Pod wil-playground running dans 'dev' + app répond sur localhost:8888
+#
+# UTILISATION :
+#   make test     (appelle ce script)
+#
+# ==============================================================================
+
 set -e
 
 # === CONFIGURATION ===
@@ -80,8 +105,9 @@ echo ""
 # =============================================================================
 # CHECK 1 : OUTILS PREREQUIS
 # =============================================================================
-# Verifie que tous les outils necessaires sont installes sur la machine.
-# Sans ces outils, rien ne peut fonctionner.
+# Vérifie que tous les outils nécessaires sont installés sur le host.
+# P3 = K3d (conteneurs Docker), pas QEMU → besoin de docker + k3d binaires.
+# Sans ces outils, rien ne peut fonctionner, exit immédiat.
 echo "[ 1. Prerequis - outils installes ]"
 for bin in docker k3d kubectl curl; do
     if command -v "$bin" >/dev/null 2>&1; then
@@ -96,8 +122,10 @@ echo ""
 # =============================================================================
 # CHECK 2 : CLUSTER K3D
 # =============================================================================
-# Verifie que le cluster K3d existe et que Kubernetes est operationnel.
-# - "k3d cluster list" verifie que K3d connait le cluster
+# Vérifie que le cluster K3d existe et que Kubernetes est opérationnel.
+# K3d lance les nœuds en tant que conteneurs Docker (plus rapide que QEMU).
+# k3d cluster list = vérifie que K3d connaît le cluster
+# kubectl get nodes = vérifie que l'API server répond et qu'un node est Ready
 # - "kubectl get nodes" verifie que l'API server repond et qu'un node est Ready
 echo "[ 2. Cluster K3d ]"
 if k3d cluster list "$CLUSTER_NAME" >/dev/null 2>&1; then

@@ -30,6 +30,7 @@ all: up
 # A lancer une seule fois (ou lors de la defense pour montrer l'installation).
 setup:
 	@echo "Installation des prerequis..."
+	# Lance le script d'installation des dépendances et outils locaux.
 	@bash scripts/setup.sh
 
 # --- Deploiement complet ---
@@ -37,6 +38,7 @@ setup:
 # Idempotent : peut etre relance sans tout casser.
 up:
 	@echo "Deploiement de l'infrastructure..."
+	# Lance le script principal qui crée le cluster et déploie Argo CD.
 	@bash scripts/deploy.sh
 
 # --- Tests de validation ---
@@ -47,6 +49,7 @@ up:
 # - Application deployee et repondant sur localhost:8888
 test:
 	@echo "Lancement des tests..."
+	# Exécute les vérifications de bout en bout.
 	@bash scripts/test.sh
 
 # --- Destruction du cluster ---
@@ -54,6 +57,7 @@ test:
 # Les images Docker restent en cache (pas besoin de les re-telecharger).
 clean:
 	@echo "Destruction du cluster K3d..."
+	# Supprime le cluster K3d nommé mycluster s'il existe.
 	@k3d cluster delete mycluster || true
 
 # --- Reconstruction complete ---
@@ -65,15 +69,19 @@ re: clean up
 # Utile pendant la defense pour montrer l'etat.
 status:
 	@echo "=== Etat du cluster ==="
+	# Liste les clusters K3d visibles localement.
 	@k3d cluster list 2>/dev/null || echo "K3d non installe ou aucun cluster"
 	@echo ""
 	@echo "=== Nodes Kubernetes ==="
+	# Affiche les nodes du cluster actif.
 	@kubectl get nodes 2>/dev/null || echo "Aucun cluster actif"
 	@echo ""
 	@echo "=== Pods Argo CD ==="
+	# Affiche les pods Argo CD si le namespace existe.
 	@kubectl get pods -n argocd 2>/dev/null || echo "Namespace argocd introuvable"
 	@echo ""
 	@echo "=== Pods dev ==="
+	# Affiche les pods de l'application déployée.
 	@kubectl get pods -n dev 2>/dev/null || echo "Namespace dev introuvable"
 
 # --- Mot de passe admin Argo CD ---
@@ -81,6 +89,7 @@ status:
 # Login : admin / Password : (affiche par cette commande)
 password:
 	@echo "Mot de passe admin Argo CD :"
+	# Récupère le mot de passe initial stocké dans le Secret Argo CD.
 	@kubectl get secret argocd-initial-admin-secret -n argocd \
 		-o jsonpath="{.data.password}" 2>/dev/null | base64 -d && echo \
 		|| echo "Argo CD non installe ou secret introuvable"

@@ -1,5 +1,27 @@
 #!/bin/bash
-# Test script P2 - vérifie les exigences du sujet depuis le host
+# ==============================================================================
+# P2 - TEST SCRIPT
+# ==============================================================================
+#
+# BUT : Valider que l'infrastructure Inception of Things - Part 2 est OK.
+#
+# CONTEXTE : 1 VM QEMU (loginS = K3s single-node) + Kubernetes ingress + apps.
+#            VM gérée par Vagrant, démarrée via 'make up'.
+#
+# TESTS EFFECTUES :
+#   1. VM en cours d'exécution
+#   2. SSH sans mot de passe fonctionnel
+#   3. Hostname correct (loginS)
+#   4. IP privée correcte (192.168.56.110)
+#   5. K3s server actif
+#   6. 3 Deployments: app1 (1 pod), app2 (3 pods), app3 (1 pod)
+#   7. Ingress configuré pour router les requêtes HTTP
+#   8. Routing HTTP fonctionnel via Host headers (app1.com, app2.com, default)
+#
+# UTILISATION :
+#   make test     (appelle ce script)
+#
+# ==============================================================================
 
 GOINFRE="/goinfre/$(whoami)/kvm-p2"
 SSH_KEY="/goinfre/$(whoami)/kvm/ssh/id_rsa"
@@ -45,8 +67,8 @@ echo "  P2 - Tests Inception of Things"
 echo "========================================="
 echo ""
 
-# --- VM running ---
-echo "[ VM ]"
+# --- CHECK 1 : VM EN COURS D'EXÉCUTION ---
+echo "[ 1. VM ]"
 PIDS="$GOINFRE/pids"
 if [ -f "$PIDS/$SERVER_NAME.pid" ] && kill -0 "$(cat $PIDS/$SERVER_NAME.pid)" 2>/dev/null; then
     pass "$SERVER_NAME est running"
@@ -55,8 +77,8 @@ else
 fi
 echo ""
 
-# --- SSH sans mot de passe ---
-echo "[ SSH sans mot de passe ]"
+# --- CHECK 2 : SSH SANS MOT DE PASSE ---
+echo "[ 2. SSH sans mot de passe ]"
 if wait_ssh; then
     pass "SSH $SERVER_NAME (port $SSH_PORT) sans mot de passe"
 else
@@ -64,8 +86,8 @@ else
 fi
 echo ""
 
-# --- Hostname ---
-echo "[ Hostname ]"
+# --- CHECK 3 : HOSTNAME CORRECT ---
+echo "[ 3. Hostname ]"
 if wait_for "hostname" "ssh_vm hostname" "$SERVER_NAME"; then
     pass "Hostname = '$SERVER_NAME'"
 else
@@ -73,8 +95,8 @@ else
 fi
 echo ""
 
-# --- IP privée ---
-echo "[ IP 192.168.56.110 ]"
+# --- CHECK 4 : IP PRIVÉE CORRECTE ---
+echo "[ 4. IP 192.168.56.110 ]"
 get_ip() { ssh_vm "ip -4 addr show | grep 192.168.56 | awk '{print \$2}' | cut -d/ -f1"; }
 if wait_for "IP 192.168.56.110" "get_ip" "192.168.56.110"; then
     pass "IP privée = 192.168.56.110"
@@ -83,8 +105,8 @@ else
 fi
 echo ""
 
-# --- K3s server ---
-echo "[ K3s server ]"
+# --- CHECK 5 : K3S SERVER ACTIF ---
+echo "[ 5. K3s server ]"
 get_k3s() { ssh_vm "systemctl is-active k3s 2>/dev/null"; }
 if wait_for "k3s actif" "get_k3s" "active"; then
     pass "K3s server actif"
@@ -93,8 +115,15 @@ else
 fi
 echo ""
 
-# --- Deployments et pods ---
-echo "[ Deployments ]"
+# --- CHECK 6 : DEPLOYMENTS KUBERNETES ---
+# Le sujet impose 3 applications (deployments) avec diverses répliques :
+#   • app1 : NGINX simple, 1 pod
+#   • app2 : NGINX, 3 pods (sujet impose 3)
+#   • app3 : NGINX simple, 1 pod
+# 
+# Ces deployments sont créés par les manifests app1.yaml, app2.yaml, app3.yaml
+# et déployés par setup_k3s.sh (kubectl apply).
+echo "[ 6. Deployments ]"
 
 wait_deploy_ready() {
     local name="$1" expected_replicas="$2" elapsed=0
@@ -126,8 +155,10 @@ else
 fi
 echo ""
 
-# --- Ingress existe ---
-echo "[ Ingress ]"
+# --- CHECK 7 : INGRESS KUBERNETES ---
+# Traefik (installé par K3s par défaut) gère le routage HTTP/HTTPS depuis le host
+# vers les services Kubernetes. L'Ingress 'ingress' exposse (route) les 3 apps.
+echo "[ 7. Ingress ]"
 ingress=$(ssh_vm "sudo kubectl get ingress ingress --no-headers 2>/dev/null | awk '{print \$1}'")
 if [ "$ingress" = "ingress" ]; then
     pass "Ingress 'ingress' existe"
@@ -137,8 +168,15 @@ else
 fi
 echo ""
 
-# --- Routing HTTP ---
-echo "[ Routing via Host header → http://localhost:$APP_PORT ]"
+# --- CHECK 8 : ROUTING HTTP (HOST HEADERS) ---
+# L'Ingress routage les requêtes en fonction du Host header :
+#   • Host: app1.com      → app1 service → app1 pods
+#   • Host: app2.com      → app2 service → app2 pods
+#   • Host: (aucun/autre) → app3 service → app3 pods (défaut)
+# 
+# QEMU forwardé le port 8081 du host vers le port 80 de la VM (ens3).
+# Traefik écoute en localhost:80, donc on curl http://localhost:8081.
+echo "[ 8. Routing via Host header → http://localhost:$APP_PORT ]"
 
 wait_http() {
     local host="$1" expected="$2" elapsed=0

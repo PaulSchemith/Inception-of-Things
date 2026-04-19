@@ -1,5 +1,25 @@
 #!/bin/bash
-# Test script P1 - vérifie les exigences du sujet depuis le host
+# ==============================================================================
+# P1 - TEST SCRIPT
+# ==============================================================================
+#
+# BUT : Valider que l'infrastructure Inception of Things - Part 1 est OK.
+#
+# CONTEXTE : 2 VMs QEMU (loginS = serveur K3s, loginSW = worker K3s)
+#            Gérées par Vagrant, démarrées via 'make up'.
+#
+# TESTS EFFECTUES :
+#   1. VMs en cours d'exécution (processus QEMU vivants)
+#   2. SSH sans mot de passe fonctionnel (clé SSH précéchargée)
+#   3. Hostnames corrects (loginS et loginSW)
+#   4. IPs privées correctes (192.168.56.110 et .111)
+#   5. K3s server et agent actifs (services systemd)
+#   6. Cluster K3s complet (2 nodes Ready)
+#
+# UTILISATION :
+#   make test     (appelle ce script)
+#
+# ==============================================================================
 
 # === CONFIGURATION ===
 
@@ -90,8 +110,11 @@ echo "  P1 - Tests Inception of Things"
 echo "========================================="
 echo ""
 
-# --- CHECK 1 : VMs en cours d'exécution ---
-# Vérifie que les fichiers PID existent et que les processus QEMU sont vivants
+# --- CHECK 1 : VMs EN COURS D'EXÉCUTION ---
+# Vérifie que les fichiers PID existent et que les processus QEMU sont vivants.
+# Les VMs sont lancées par Vagrant dans 'make up' et les PIDs sont stockés dans
+# $GOINFRE/pids/. Sans ces VMs, rien ne peut fonctionner → exit immédiat en cas d'échec.
+# 
 # kill -0 PID = envoie signal 0 = vérifie juste si le processus existe, sans le tuer
 echo "[ VMs ]"
 PIDS="$GOINFRE/pids"
@@ -107,11 +130,14 @@ else
 fi
 echo ""
 
-# --- CHECK 2 : SSH sans mot de passe ---
-# Le sujet impose SSH sans mot de passe.
-# On utilise BatchMode=yes pour que SSH échoue immédiatement si une clé est requise
-# mais absente, plutôt que d'attendre un prompt de mot de passe.
-# On attend car la VM peut prendre ~30-60s à démarrer sshd après le boot.
+# --- CHECK 2 : SSH SANS MOT DE PASSE ---
+# Vérifie que SSH fonctionne sans prompt de mot de passe (clé SSH précéchargée).
+# 
+# DÉTAIL TECHNIQUE :
+#   • Vagrant injecte la clé SSH publique dans ~/.ssh/authorized_keys via cloud-init
+#   • La clé privée est stockée dans $SSH_KEY (généré par setup_server.sh)
+#   • BatchMode=yes = SSH échoue immédiatement si auth échoue (pas de prompt interactif)
+#   • On attend ~300s car sshd peut prendre 30-60s à démarrer après le boot de la VM
 echo "[ SSH sans mot de passe ]"
 if wait_ssh $SERVER_PORT $SERVER_NAME; then
     pass "SSH $SERVER_NAME (port $SERVER_PORT) sans mot de passe"
@@ -125,9 +151,14 @@ else
 fi
 echo ""
 
-# --- CHECK 3 : Hostnames ---
-# Le sujet impose loginS et loginSW comme hostname (avec le login du binôme).
-# On exécute "hostname" dans chaque VM et on compare au nom attendu.
+# --- CHECK 3 : HOSTNAMES CORRECTS ---
+# Le sujet exige des noms d'hôtes spécifiques :
+#   • Serveur  : loginS    (ex: pschemitS)
+#   • Worker   : loginSW   (ex: pschemitSW)
+# 
+# Ce test vérifie que les hostnames sont configurés correctement dans les VMs.
+# Les hostnames sont définis dans les scripts setup_server.sh et setup_worker.sh
+# via 'hostnamectl set-hostname' (systemd-hostnamed).
 echo "[ Hostnames ]"
 if wait_for "hostname server" "ssh_server hostname" "$SERVER_NAME"; then
     pass "Hostname server = '$SERVER_NAME'"
@@ -141,10 +172,15 @@ else
 fi
 echo ""
 
-# --- CHECK 4 : IPs privées ---
-# Le sujet impose 192.168.56.110 sur le serveur et 192.168.56.111 sur le worker.
-# Ces IPs sont sur l'interface ens4 (réseau multicast QEMU entre les deux VMs).
-# On filtre "ip addr" sur le préfixe 192.168.56 et on extrait l'IP sans le masque CIDR.
+# --- CHECK 4 : IPS PRIVÉES CORRECTES ---
+# Le sujet impose des IPs bien spécifiques pour le cluster K3s :
+#   • Serveur  : 192.168.56.110
+#   • Worker   : 192.168.56.111
+# 
+# RÉSEAU QEMU :
+#   • Ces IPs sont sur l'interface ens4 (réseau interne private QEMU)
+#   • Vagrant configure ce réseau via Vagrantfile + netplan
+#   • On filtre 'ip addr show' sur 192.168.56.x et on extrait l'IP (format: 192.168.56.110/24)
 echo "[ IPs 192.168.56.x ]"
 get_ip_s() { ssh_server "ip -4 addr show | grep 192.168.56 | awk '{print \$2}' | cut -d/ -f1"; }
 get_ip_w() { ssh_worker "ip -4 addr show | grep 192.168.56 | awk '{print \$2}' | cut -d/ -f1"; }
@@ -161,12 +197,15 @@ else
 fi
 echo ""
 
-# --- CHECK 5 : Services K3s ---
-# Le sujet impose K3s en mode controller sur le serveur et en mode agent sur le worker.
-# - Sur le serveur : le service systemd s'appelle "k3s"
-# - Sur le worker  : le service systemd s'appelle "k3s-agent"
-# "systemctl is-active" renvoie "active" si le service tourne, sinon "inactive"/"failed"/etc.
-# On attend car K3s peut prendre plusieurs minutes à démarrer (téléchargement, init).
+# --- CHECK 5 : K3S SERVICES ACTIFS ---
+# Le sujet impose K3s en deux rôles distincts :
+#   • Serveur (controller)  : systemd service 'k3s' → lance le chapiteau + agent
+#   • Worker (agent)        : systemd service 'k3s-agent' → agent seulement
+# 
+# STARTUP RAPIDE MAIS PATIEMMENT :
+#   • K3s se télécharge et s'initialise ~10-50s après systemd start
+#   • Timeout = 300s pour gérer les machines lentes
+#   • Le test attend VRAIMENT que K3s soit prêt avant de continuer
 echo "[ K3s ]"
 get_k3s_s() { ssh_server "systemctl is-active k3s 2>/dev/null"; }
 get_k3s_w() { ssh_worker "systemctl is-active k3s-agent 2>/dev/null"; }
@@ -183,11 +222,15 @@ else
 fi
 echo ""
 
-# --- CHECK 6 : Cluster K3s ---
-# On vérifie que les deux nodes apparaissent bien dans le cluster avec le status "Ready".
-# Kubernetes force les noms de nodes en lowercase → pschemitS devient pschemits.
-# On interroge kubectl sur le serveur (seul le serveur a les droits admin sur le cluster).
-# On attend car le worker peut prendre ~1-2min après le démarrage du service pour s'enregistrer.
+# --- CHECK 6 : CLUSTER K3S (2 NODES READY) ---
+# Le test le plus important : vérifier que K3s fonctionne en cluster multi-node.
+# 
+# DÉTAILS CRITIQUES :
+#   • Les nodes s'enregistrent auprès du serveur via le token K3s + API interne
+#   • Kubernetes force les noms en LOWERCASE → loginS → loginS (K3s lowercase)
+#   • On exécute kubectl DEPUIS le serveur (seul point d'accès admin au cluster)
+#   • Le worker peut prendre ~1-2min pour s'enregistrer après "k3s-agent start"
+#   • Status = 'Ready' = le node peut recevoir des pods (kubelet fonctionnel, CPU ok, etc)
 echo "[ Cluster K3s ]"
 SERVER_K8S="${SERVER_NAME,,}"  # lowercase bash : pschemitS → pschemits
 WORKER_K8S="${WORKER_NAME,,}"  # lowercase bash : pschemitSW → pschemitsw

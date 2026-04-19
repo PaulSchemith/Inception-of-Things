@@ -1,31 +1,36 @@
 #!/bin/bash
-# =============================================================================
-# Bonus Test Script - Valide les exigences du sujet bonus
-# =============================================================================
+# ==============================================================================
+# BONUS - TEST SCRIPT
+# ==============================================================================
 #
-# EXIGENCES DU SUJET VERIFIEES :
+# BUT : Valider que P3 fonctionne avec GitLab LOCAL au lieu de GitHub.
+#
+# CONTEXTE : 
+#   • Cluster K3d local (comme P3)
+#   • GitLab helm chart déployé dans namespace 'gitlab'
+#   • Argo CD pointant vers un repo GitLab LOCAL (pas GitHub)
+#   • App wil-playground toujours dans 'dev', mais source = GitLab local
+#
+# EXIGENCES BONUS VÉRIFIÉES :
 #   ✓ GitLab tourne localement (namespace gitlab, accessible localhost:8929)
-#   ✓ GitLab est configure pour fonctionner avec le cluster
-#      → repo GitLab cree, manifest deployment.yaml present
-#   ✓ Namespace dedie "gitlab" cree
-#   ✓ Tout ce qui fonctionnait en P3 fonctionne avec GitLab local :
-#      → Argo CD deploie depuis GitLab (pas GitHub)
-#      → App wil-playground dans namespace dev
-#      → curl localhost:8888 repond avec v1 ou v2
+#   ✓ GitLab est configuré avec un repo 'root/iot-wil-app' contenant deployment.yaml
+#   ✓ Namespace 'gitlab' créé explicitement (requirement sujet)
+#   ✓ Argo CD source = GitLab local (pas GitHub)
+#   ✓ Application wil-playground deployée et accessible (comme P3)
 #
 # CHECKS (dans l'ordre) :
 #   1. Prerequis       : helm, docker, k3d, kubectl, curl, jq
-#   2. Cluster K3d     : existence + node Ready
-#   3. Namespaces      : argocd + dev + gitlab (TOUS TROIS requis)
-#   4. GitLab          : pods Ready + HTTP accessible + API repond + repo existe
-#   5. Argo CD         : pods Ready + UI accessible
-#   6. GitOps          : Application source=GitLab, Synced, Healthy
-#   7. Application dev : pod Running + curl localhost:8888 repond
+#   2. Cluster K3d     : existence + nodes Ready
+#   3. Namespaces      : argocd + dev + gitlab (TOUS TROIS explicitement requis)
+#   4. GitLab          : pods Ready, UI/API accessible, repo exists
+#   5. Argo CD         : pods Ready, UI accessible
+#   6. GitOps          : Application source=GitLab (PAS GitHub!), Synced, Healthy
+#   7. Application dev : pod Running + curl localhost:8888 répond
 #
 # UTILISATION :
 #   make test   (ou bash scripts/test.sh)
 #
-# =============================================================================
+# ==============================================================================
 
 # Pas de set -e : on veut que fail() continue le script pour voir TOUS les echecs
 CLUSTER_NAME="${CLUSTER_NAME:-mycluster}"

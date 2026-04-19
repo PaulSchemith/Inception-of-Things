@@ -23,39 +23,48 @@ all: destroy setup up
 # 1. Détruire la VM existante
 destroy:
 	@echo "Destruction de la VM..."
+	# Stoppe la VM existante en tuant le PID QEMU stocké dans $(PIDS).
 	@for pid_file in $(PIDS)/*.pid; do \
 		[ -f "$$pid_file" ] || continue; \
 		pid=$$(cat "$$pid_file"); \
 		kill -0 "$$pid" 2>/dev/null && kill "$$pid" || true; \
 		rm -f "$$pid_file"; \
 	done
+	# Supprime le disque virtuel et l'ISO cloud-init de p2.
 	rm -f $(IMGS)/$(SERVER).qcow2 $(GOINFRE)/seed-p2.iso
 
 # 2. Préparer les dossiers et l'image de base
 setup:
 	@echo "Setup des dossiers..."
+	# Prépare les dossiers de travail pour l'image, les logs et les PID.
 	mkdir -p $(IMGS) $(SHARED) $(LOGS) $(PIDS)
 	# Réutilise la clé SSH et l'image de base générées par p1
+	# Génère une clé SSH si elle n'existe pas encore.
 	@if [ ! -f $(SSH_KEY) ]; then \
 		mkdir -p /goinfre/$(USER)/kvm/ssh; \
 		ssh-keygen -t ed25519 -N "" -f $(SSH_KEY) -C "iot-kvm"; \
 	fi
+	# Télécharge l'image Ubuntu de base si elle est absente.
 	@if [ ! -f $(BASE_IMG) ]; then \
 		echo "Téléchargement de l'image Ubuntu Jammy..."; \
 		wget -q --show-progress -O $(BASE_IMG) $(BASE_URL); \
 	fi
 	# Copie les manifests K8s dans le dossier partagé pour que la VM y ait accès via /vagrant
+	# Rend les manifests disponibles dans /vagrant pour le déploiement.
 	cp -r $(CURDIR)/confs $(SHARED)/
 
 # 3. Lancer la VM
 up: setup
 	@echo "Démarrage VM $(SERVER)..."
+	# Génère l'ISO cloud-init avec le script K3s de la VM p2.
 	$(SCRIPTS)/gen-seed.sh \
 		$(SERVER) $(SERVER_IP) 52:54:00:12:35:01 52:54:00:ab:ce:01 \
 		$(GOINFRE)/seed-p2.iso \
 		$(SCRIPTS)/setup_k3s.sh \
 		$(SSH_KEY).pub
+	# Crée le disque de la VM p2.
 	qemu-img create -f qcow2 -b $(BASE_IMG) -F qcow2 $(IMGS)/$(SERVER).qcow2 20G
+	# Démarre la VM avec SSH, port HTTP et réseau privé.
 	qemu-system-x86_64 \
 		-name guest=$(SERVER)-p2 \
 		-m 1024 -smp 1 -enable-kvm -cpu host \
@@ -73,13 +82,16 @@ up: setup
 # Réappliquer les manifests sur la VM existante sans la recréer
 deploy:
 	@echo "Déploiement des manifests..."
+	# Recopie les manifests dans le dossier partagé avant application.
 	cp -r $(CURDIR)/confs $(SHARED)/
+	# Applique les manifests Kubernetes depuis la VM via SSH.
 	ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
 		-i $(SSH_KEY) -p $(SSH_PORT) vagrant@localhost \
 		"sudo kubectl apply -f /vagrant/confs && sudo kubectl get pods && sudo kubectl get ingress"
 
 status:
 	@echo "=== Status ==="
+	# Vérifie si la VM p2 tourne toujours.
 	@if [ -f $(PIDS)/$(SERVER).pid ] && kill -0 $$(cat $(PIDS)/$(SERVER).pid) 2>/dev/null; then \
 		echo "$(SERVER): running (PID: $$(cat $(PIDS)/$(SERVER).pid))"; \
 	else echo "$(SERVER): stopped"; fi

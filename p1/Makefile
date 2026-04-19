@@ -22,23 +22,29 @@ all: destroy setup up-server up-agent
 # 1. Détruire les VMs existantes
 destroy:
 	@echo "Destruction des VMs..."
+	# Stoppe chaque VM QEMU encore active, puis supprime son fichier PID.
 	@for pid_file in $(PIDS)/*.pid; do \
 		[ -f "$$pid_file" ] || continue; \
 		pid=$$(cat "$$pid_file"); \
 		kill -0 "$$pid" 2>/dev/null && kill "$$pid" || true; \
 		rm -f "$$pid_file"; \
 	done
+	# Supprime les disques virtuels et les ISO cloud-init des deux VMs.
 	rm -f $(IMGS)/$(SERVER).qcow2 $(IMGS)/$(WORKER).qcow2
 	rm -f $(GOINFRE)/seed-server.iso $(GOINFRE)/seed-worker.iso
+	# Supprime le token K3s partagé entre serveur et worker.
 	rm -f $(SHARED)/node-token
 
 # 2. Créer les dossiers et télécharger l'image de base
 setup:
 	@echo "Setup des dossiers..."
+	# Crée les répertoires de travail pour les images, logs, PID et SSH.
 	mkdir -p $(IMGS) $(SHARED) $(LOGS) $(PIDS) $(GOINFRE)/ssh
+	# Génère une clé SSH seulement si elle n'existe pas encore.
 	@if [ ! -f $(SSH_KEY) ]; then \
 		ssh-keygen -t ed25519 -N "" -f $(SSH_KEY) -C "p1-iot"; \
 	fi
+	# Télécharge l'image Ubuntu de base une seule fois.
 	@if [ ! -f $(BASE_IMG) ]; then \
 		echo "Téléchargement de l'image Ubuntu Jammy..."; \
 		wget -q --show-progress -O $(BASE_IMG) $(BASE_URL); \
@@ -47,12 +53,15 @@ setup:
 # 3. Démarrer la VM serveur
 up-server: setup
 	@echo "Démarrage VM serveur $(SERVER)..."
+	# Génère l'ISO cloud-init du serveur avec son script de provisionnement.
 	$(SCRIPTS)/gen-seed.sh \
 		$(SERVER) $(SERVER_IP) 52:54:00:12:34:01 52:54:00:ab:cd:01 \
 		$(GOINFRE)/seed-server.iso \
 		$(SCRIPTS)/setup_server.sh \
 		$(SSH_KEY).pub
+	# Crée le disque virtuel du serveur à partir de l'image de base.
 	qemu-img create -f qcow2 -b $(BASE_IMG) -F qcow2 $(IMGS)/$(SERVER).qcow2 20G
+	# Lance la VM serveur avec réseau NAT, réseau privé et partage /vagrant.
 	qemu-system-x86_64 \
 		-name guest=$(SERVER) \
 		-m 1024 -smp 1 -enable-kvm -cpu host \
@@ -70,14 +79,18 @@ up-server: setup
 # 4. Attendre le token puis démarrer le worker
 up-agent:
 	@echo "En attente du node-token serveur..."
+	# Attend que le serveur ait écrit le token partagé avant de lancer le worker.
 	@while [ ! -f $(SHARED)/node-token ]; do sleep 5; done
 	@echo "Token disponible, démarrage VM worker $(WORKER)..."
+	# Génère l'ISO cloud-init du worker avec son script de provisionnement.
 	$(SCRIPTS)/gen-seed.sh \
 		$(WORKER) $(WORKER_IP) 52:54:00:12:34:02 52:54:00:ab:cd:02 \
 		$(GOINFRE)/seed-worker.iso \
 		$(SCRIPTS)/setup_worker.sh \
 		$(SSH_KEY).pub
+	# Crée le disque virtuel du worker à partir de l'image de base.
 	qemu-img create -f qcow2 -b $(BASE_IMG) -F qcow2 $(IMGS)/$(WORKER).qcow2 10G
+	# Lance la VM worker avec la même topologie réseau que le serveur.
 	qemu-system-x86_64 \
 		-name guest=$(WORKER) \
 		-m 512 -smp 1 -enable-kvm -cpu host \
@@ -94,21 +107,27 @@ up-agent:
 
 status:
 	@echo "=== Status des VMs ==="
+	# Vérifie si le processus du serveur existe encore.
 	@if [ -f $(PIDS)/$(SERVER).pid ] && kill -0 $$(cat $(PIDS)/$(SERVER).pid) 2>/dev/null; then \
 		echo "$(SERVER):  running (PID: $$(cat $(PIDS)/$(SERVER).pid))"; \
 	else echo "$(SERVER):  stopped"; fi
+	# Vérifie si le processus du worker existe encore.
 	@if [ -f $(PIDS)/$(WORKER).pid ] && kill -0 $$(cat $(PIDS)/$(WORKER).pid) 2>/dev/null; then \
 		echo "$(WORKER): running (PID: $$(cat $(PIDS)/$(WORKER).pid))"; \
 	else echo "$(WORKER): stopped"; fi
 
 ssh-server:
+	# Ouvre une session SSH vers le serveur via le port forwardé 2222.
 	ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $(SSH_KEY) -p 2222 vagrant@localhost
 
 ssh-worker:
+	# Ouvre une session SSH vers le worker via le port forwardé 2223.
 	ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i $(SSH_KEY) -p 2223 vagrant@localhost
 
 logs-server:
+	# Affiche les logs console du serveur en direct.
 	tail -f $(LOGS)/$(SERVER).log
 
 logs-worker:
+	# Affiche les logs console du worker en direct.
 	tail -f $(LOGS)/$(WORKER).log
