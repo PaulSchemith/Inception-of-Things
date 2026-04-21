@@ -5,19 +5,19 @@
 #
 # CE QUE CE SCRIPT FAIT (dans l'ordre) :
 #
-#  [1] Check cgroup CPU (requis par K3s dans Docker)
-#  [2] Cree le cluster K3d avec 3 ports mappes :
-#        8888  → app wil-playground
-#        8929  → GitLab UI  (via NodePort 30929)
-#        31080 → Argo CD UI
-#  [3] Cree les 3 namespaces : argocd, dev, gitlab
-#  [4] Installe GitLab via Helm (chart officiel gitlab/gitlab)
-#  [5] Expose GitLab sur localhost:8929 via un Service NodePort
-#  [6] Installe Argo CD (identique a P3)
-#  [7] Cree un Personal Access Token GitLab via le pod "toolbox"
-#  [8] Cree le projet GitLab et pousse le manifest deployment.yaml
-#  [9] Configure Argo CD pour surveiller le repo GitLab local
-# [10] Attend la synchronisation Argo CD → app dans namespace dev
+#  [ 1] Cree le cluster K3d avec 3 ports mappes :
+#         8888  → app wil-playground
+#         8929  → GitLab UI  (via NodePort 30929)
+#         31080 → Argo CD UI
+#  [ 2] Cree les 3 namespaces : argocd, dev, gitlab
+#  [ 3] Installe GitLab via Helm (chart officiel gitlab/gitlab)
+#  [ 4] Expose GitLab sur localhost:8929 + attend migrations + webservice ready
+#  [ 5] Installe Argo CD (identique a P3)
+#  [ 6] Cree le compte root + Personal Access Token GitLab via le pod "toolbox"
+#  [ 7] Cree le projet GitLab et pousse le manifest deployment.yaml
+#  [ 8] Configure Argo CD pour surveiller le repo GitLab local
+#  [ 9] Cree l'Application Argo CD
+#  [10] Attend la synchronisation Argo CD → app dans namespace dev
 #
 # NOTE SUR LE TOOLBOX :
 #   Dans le chart cloud-native (Helm) de GitLab, les pods webservice tournent
@@ -49,9 +49,6 @@ GITLAB_INTERNAL="http://gitlab-webservice-default.${GITLAB_NS}.svc.cluster.local
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 CONFS_DIR="$PROJECT_DIR/confs"
-
-echo "Script dir : $SCRIPT_DIR"
-echo "Confs dir  : $CONFS_DIR"
 
 # Verifie les fichiers de config necessaires
 for f in gitlab-values.yaml gitlab-nodeport.yaml argocd-server.yaml deployment.yaml; do
@@ -453,6 +450,9 @@ kubectl wait --for=condition=Ready pod --all \
 # =============================================================================
 # RESULTAT
 # =============================================================================
+ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret \
+    -n "$ARGOCD_NS" -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "(make password)")
+
 echo ""
 echo "Deploiement termine !"
 echo "================================================"
@@ -461,8 +461,6 @@ echo "GitLab            : ${GITLAB_EXTERNAL}"
 echo "  Login           : root / ${GITLAB_ROOT_PASSWORD}"
 echo "  Repo            : ${GITLAB_EXTERNAL}/root/iot-wil-app"
 echo ""
-ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret \
-    -n "$ARGOCD_NS" -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "(make password)")
 echo "Argo CD           : https://localhost:${ARGOCD_NODEPORT}"
 echo "  Login           : admin / ${ARGOCD_PASSWORD}"
 echo ""
