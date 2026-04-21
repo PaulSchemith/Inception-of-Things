@@ -1,72 +1,39 @@
 # =============================================================================
 # Vagrantfile P2 - Une VM Ubuntu avec K3s + 3 applications + Ingress
-# =============================================================================
 #
-# DIFFERENCES AVEC P1 :
-#   P1 : 2 VMs (1 server + 1 worker) → cluster distribue
-#   P2 : 1 VM  (server seul)         → tout sur une machine, plus simple
-#
-# ARCHITECTURE P2 :
+# ARCHITECTURE :
 #   +--------------------------------------------------+
-#   |  loginS (VM unique)   192.168.56.110             |
+#   |  loginS   192.168.56.110                         |
 #   |                                                  |
 #   |  K3s server (control plane + worker)             |
 #   |                                                  |
-#   |  [app1] [app2 x3 replicas] [app3]                |
+#   |  [app1]  [app2 x3 replicas]  [app3]              |
 #   |         ↑                                        |
 #   |  Traefik Ingress (routage par Host header)       |
 #   |    app1.com → app1                               |
 #   |    app2.com → app2                               |
 #   |    *        → app3 (catch-all)                   |
 #   +--------------------------------------------------+
-#         ↑
-#   host:8081 → VM:80 (port forwarding)
-#
-# OBJECTIF :
-#   Apprendre le routage HTTP dans Kubernetes via un Ingress Controller.
-#   Un seul point d'entree (port 80) route vers differentes apps selon
-#   le header "Host" de la requete HTTP.
-#
-# NOTE SUR LE PROJET :
-#   Ce projet utilise QEMU/KVM plutot que VirtualBox (machines 42 sans VBox).
-#   Ce Vagrantfile est conserve pour la reference et la compatibilite, mais
-#   le vrai orchestrateur est le Makefile + les scripts QEMU.
-#
 # =============================================================================
 
 Vagrant.configure("2") do |config|
+  login       = ENV.fetch("P2_LOGIN", ENV.fetch("USER", "student"))
+  server_name = "#{login}S"
 
-  # === IMAGE DE BASE ===
   config.vm.box = "generic/ubuntu2204"
 
-  # === HOSTNAME DYNAMIQUE ===
-  # #{ENV['USER']} = interpolation Ruby qui lit la variable d'environnement USER.
-  # Sur les machines 42, USER = login de l'etudiant (ex: pschemit).
-  # Resultat : la VM s'appellera "pschemitS" (login + "S" = Server).
-  # Le sujet impose ce format de hostname.
-  config.vm.hostname = "#{ENV['USER']}S"
+  # virtiofs : partage le dossier p2/ avec la VM sous /vagrant.
+  # Permet à setup_k3s.sh de lire les manifests depuis /vagrant/confs.
+  config.vm.synced_folder ".", "/vagrant", type: "virtiofs"
 
-  # === RESEAU PRIVE ===
-  # IP fixe accessible depuis le host et potentiellement depuis d'autres VMs.
-  # Meme IP que p1 server car les deux parties sont independantes.
-  config.vm.network "private_network", ip: "192.168.56.110"
-
-  # === PORT FORWARDING ===
-  # Redirige host:8081 → VM:80.
-  # Permet d'acceder aux applications Kubernetes depuis le navigateur du host :
-  #   curl -H "Host: app1.com" http://localhost:8081
-  # Port 8081 (et non 8080) pour eviter les conflits si d'autres services tournent.
-  config.vm.network "forwarded_port", guest: 80, host: 8081
-
-  # === RESSOURCES VM ===
-  config.vm.provider "libvirt" do |lv|
-    lv.cpus   = 1
-    lv.memory = 1024  # K3s + 3 apps nginx leger = 1 Go suffisant
+  config.vm.define server_name do |server|
+    server.vm.hostname = server_name
+    server.vm.network "private_network", ip: "192.168.56.110"
+    server.vm.provider "libvirt" do |lv|
+      lv.memory = 1024
+      lv.cpus   = 1
+      lv.memorybacking :access, :mode => "shared"
+    end
+    server.vm.provision "shell", path: "scripts/setup_k3s.sh"
   end
-
-  # === PROVISIONNEMENT ===
-  # setup_k3s.sh installe K3s et deploie les manifests YAML depuis /vagrant/confs.
-  # /vagrant est le dossier partage entre le host et la VM (synced_folder automatique).
-  config.vm.provision "shell", path: "scripts/setup_k3s.sh"
-
 end
