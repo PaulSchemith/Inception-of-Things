@@ -1,97 +1,49 @@
 # =============================================================================
 # Makefile P3 - K3d + Argo CD (Continuous Deployment via GitOps)
-# =============================================================================
 #
-# RESUME DU SUJET :
-#   P3 met en place une infrastructure de continuous deployment :
-#   - Un cluster K3d (K3s dans Docker, pas de VM)
-#   - Argo CD surveille un repo GitHub
-#   - L'application est deployee automatiquement dans le namespace "dev"
-#   - Changer la version dans GitHub → Argo CD synchronise automatiquement
-#
-# COMMANDES DISPONIBLES :
 #   make setup    → Installe les prerequis (Docker, K3d, kubectl, argocd CLI)
 #   make          → Cree le cluster et deploie tout (= make up)
-#   make test     → Verifie que tout est correct (namespaces, pods, HTTP...)
+#   make test     → Verifie que tout est correct
 #   make status   → Affiche l'etat du cluster et des pods
 #   make password → Affiche le mot de passe admin Argo CD
 #   make clean    → Detruit le cluster K3d
-#   make re       → clean + up (tout reconstruire)
-#
+#   make re       → clean + up
 # =============================================================================
 
 NAME = p3
 
-# Cible par defaut : deployer tout
+.PHONY: all setup up test clean re status password
+
 all: up
 
-# --- Installation des prerequis ---
-# Installe Docker, K3d, kubectl, argocd CLI + corrige les cgroups si necessaire.
-# A lancer une seule fois (ou lors de la defense pour montrer l'installation).
 setup:
-	@echo "Installation des prerequis..."
-	# Lance le script d'installation des dépendances et outils locaux.
 	@bash scripts/setup.sh
 
-# --- Deploiement complet ---
-# Cree le cluster K3d, installe Argo CD, deploie l'application.
-# Idempotent : peut etre relance sans tout casser.
 up:
-	@echo "Deploiement de l'infrastructure..."
-	# Lance le script principal qui crée le cluster et déploie Argo CD.
 	@bash scripts/deploy.sh
 
-# --- Tests de validation ---
-# Verifie toutes les exigences du sujet :
-# - Cluster K3d operationnel
-# - Namespaces argocd + dev
-# - Argo CD fonctionnel et accessible
-# - Application deployee et repondant sur localhost:8888
 test:
-	@echo "Lancement des tests..."
-	# Exécute les vérifications de bout en bout.
 	@bash scripts/test.sh
 
-# --- Destruction du cluster ---
-# Supprime le cluster K3d et tous ses conteneurs Docker associes.
-# Les images Docker restent en cache (pas besoin de les re-telecharger).
 clean:
-	@echo "Destruction du cluster K3d..."
-	# Supprime le cluster K3d nommé mycluster s'il existe.
 	@k3d cluster delete mycluster || true
 
-# --- Reconstruction complete ---
-# Detruit puis recree tout depuis zero.
 re: clean up
 
-# --- Etat de l'infrastructure ---
-# Affiche un resume rapide : cluster, nodes, pods argocd, pods dev.
-# Utile pendant la defense pour montrer l'etat.
 status:
-	@echo "=== Etat du cluster ==="
-	# Liste les clusters K3d visibles localement.
-	@k3d cluster list 2>/dev/null || echo "K3d non installe ou aucun cluster"
+	@echo "=== Cluster K3d ==="
+	@k3d cluster list 2>/dev/null || echo "Aucun cluster"
 	@echo ""
-	@echo "=== Nodes Kubernetes ==="
-	# Affiche les nodes du cluster actif.
+	@echo "=== Nodes ==="
 	@kubectl get nodes 2>/dev/null || echo "Aucun cluster actif"
 	@echo ""
-	@echo "=== Pods Argo CD ==="
-	# Affiche les pods Argo CD si le namespace existe.
+	@echo "=== Pods argocd ==="
 	@kubectl get pods -n argocd 2>/dev/null || echo "Namespace argocd introuvable"
 	@echo ""
 	@echo "=== Pods dev ==="
-	# Affiche les pods de l'application déployée.
 	@kubectl get pods -n dev 2>/dev/null || echo "Namespace dev introuvable"
 
-# --- Mot de passe admin Argo CD ---
-# Argo CD genere un mot de passe aleatoire a l'installation, stocke dans un Secret.
-# Login : admin / Password : (affiche par cette commande)
 password:
-	@echo "Mot de passe admin Argo CD :"
-	# Récupère le mot de passe initial stocké dans le Secret Argo CD.
 	@kubectl get secret argocd-initial-admin-secret -n argocd \
 		-o jsonpath="{.data.password}" 2>/dev/null | base64 -d && echo \
 		|| echo "Argo CD non installe ou secret introuvable"
-
-.PHONY: all setup up test clean re status password

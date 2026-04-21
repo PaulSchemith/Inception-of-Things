@@ -35,7 +35,7 @@ DEV_NS="dev"
 GITLAB_NS="gitlab"
 APP_NAME="wil-app"
 
-GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD:-GitLabP@ssw0rd!}"
+GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD:-IoT-R00t@42Lab}"
 GITLAB_NODEPORT=30929       # NodePort K8s (range valide : 30000-32767)
 GITLAB_HOST_PORT=8929       # Port accessible depuis le host (via K3d loadbalancer)
 ARGOCD_NODEPORT=31080
@@ -167,11 +167,25 @@ kubectl apply -f "$CONFS_DIR/gitlab-nodeport.yaml"
 
 # Attente des migrations (Job one-shot qui initialise la base de donnees)
 # Les migrations DOIVENT se terminer avant de pouvoir utiliser l'API.
-echo "[*] Attente des migrations GitLab (peut prendre 5-10 min)..."
-kubectl wait --for=condition=complete \
-    job/gitlab-migrations \
-    -n "$GITLAB_NS" \
-    --timeout=900s
+# Le nom du Job varie selon la version du chart (gitlab-migrations, gitlab-migrations-1...).
+echo "[*] Attente du job de migrations GitLab (peut prendre 5-10 min)..."
+MIGRATION_JOB=""
+elapsed=0
+until [ -n "$MIGRATION_JOB" ]; do
+    MIGRATION_JOB=$(kubectl get jobs -n "$GITLAB_NS" --no-headers 2>/dev/null \
+        | grep "migrations" | awk '{print $1}' | head -1 || true)
+    [ -n "$MIGRATION_JOB" ] && break
+    printf "  attente creation job migrations (%ds)...\r" "$elapsed"
+    sleep 5; elapsed=$((elapsed + 5))
+    [ $elapsed -gt 300 ] && echo "" && echo "  WARN: job migrations introuvable apres 5min, on continue..." && break
+done
+if [ -n "$MIGRATION_JOB" ]; then
+    echo "  Job trouve : $MIGRATION_JOB"
+    kubectl wait --for=condition=complete \
+        "job/$MIGRATION_JOB" \
+        -n "$GITLAB_NS" \
+        --timeout=900s
+fi
 
 # Attente que le webservice soit ready
 echo "[*] Attente que GitLab webservice soit disponible..."
@@ -242,11 +256,32 @@ if [ -z "$TOOLBOX_POD" ]; then
 fi
 echo "  Pod toolbox : $TOOLBOX_POD"
 
-# Execute du Ruby via gitlab-rails runner.
-# Le code cree le token s'il n'existe pas, sinon recupere l'existant.
-# On prefixe la sortie avec "TOKEN=" pour l'extraire proprement parmi les logs.
-GL_TOKEN=$(kubectl exec -n "$GITLAB_NS" "$TOOLBOX_POD" -- \
-    gitlab-rails runner - 2>/dev/null <<'RUBY'
+# Execute du Ruby via gitlab-rails runner (bash -c pour eviter les problemes
+# de transmission stdin avec kubectl exec + heredoc).
+#
+# Etape 6a : creation du compte root si absent (GitLab 17+ exige une Organization
+# sur le Namespace utilisateur ; on la recupere depuis la base avant de sauvegarder).
+kubectl exec -n "$GITLAB_NS" "$TOOLBOX_POD" -- bash -c "
+gitlab-rails runner \"
+if User.find_by_username('root').nil?
+  org = Organizations::Organization.first
+  u   = User.new(name: 'Administrator', username: 'root',
+                 email: 'admin@local.example', admin: true)
+  u.password              = '${GITLAB_ROOT_PASSWORD}'
+  u.password_confirmation = '${GITLAB_ROOT_PASSWORD}'
+  u.confirmed_at          = Time.current
+  ns = u.build_namespace
+  ns.organization = org
+  u.save ? \\\$stdout.puts('root created') : \\\$stderr.puts(u.errors.full_messages.to_s)
+else
+  \\\$stdout.puts 'root already exists'
+end
+\"" 2>&1
+
+# Etape 6b : creation (ou recuperation) du Personal Access Token.
+# Le sentinel TOKEN= permet d'extraire uniquement le token parmi les logs Rails.
+GL_TOKEN=$(kubectl exec -n "$GITLAB_NS" "$TOOLBOX_POD" -- bash -c "
+gitlab-rails runner \"
 begin
   user  = User.find_by_username!('root')
   token = PersonalAccessToken.find_by(name: 'iot-automation', user: user)
@@ -257,13 +292,12 @@ begin
       expires_at: 1.year.from_now
     )
   end
-  $stdout.puts "TOKEN=#{token.token}"
+  \\\$stdout.puts 'TOKEN=' + token.token
 rescue => e
-  $stderr.puts "ERROR: #{e.message}"
+  \\\$stderr.puts 'ERROR: ' + e.message
   exit 1
 end
-RUBY
-)
+\"" 2>/dev/null)
 
 GL_TOKEN=$(echo "$GL_TOKEN" | grep '^TOKEN=' | cut -d= -f2 | tr -d '[:space:]')
 
@@ -427,8 +461,10 @@ echo "GitLab            : ${GITLAB_EXTERNAL}"
 echo "  Login           : root / ${GITLAB_ROOT_PASSWORD}"
 echo "  Repo            : ${GITLAB_EXTERNAL}/root/iot-wil-app"
 echo ""
+ARGOCD_PASSWORD=$(kubectl get secret argocd-initial-admin-secret \
+    -n "$ARGOCD_NS" -o jsonpath="{.data.password}" 2>/dev/null | base64 -d || echo "(make password)")
 echo "Argo CD           : https://localhost:${ARGOCD_NODEPORT}"
-echo "  Login           : admin / make password"
+echo "  Login           : admin / ${ARGOCD_PASSWORD}"
 echo ""
 echo "Application       : curl http://localhost:8888"
 echo ""

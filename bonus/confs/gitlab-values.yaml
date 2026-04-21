@@ -58,10 +58,11 @@ global:
     configureCertmanager: false
     enabled: false
 
-# cert-manager : gestionnaire de certificats TLS automatiques (Let's Encrypt).
-# Pas utile en local sans domaine reel.
-certmanager:
-  install: false
+  # minio.enabled a ete deplace ici depuis la section minio: locale
+  minio:
+    enabled: true
+
+# cert-manager : desactive via global.ingress.configureCertmanager: false ci-dessus.
 certmanager-issuer:
   # Email factice requis par le chart meme quand certmanager est desactive
   email: admin@local.example
@@ -173,8 +174,8 @@ redis:
 
 # MINIO : stockage objet S3-compatible
 # Stocke : avatars, pieces-jointes, artefacts CI, backup...
+# Note : enabled est desormais gere via global.minio.enabled ci-dessus.
 minio:
-  enabled: true
   resources:
     requests:
       cpu: 50m
