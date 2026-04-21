@@ -23,14 +23,20 @@
 #   l'etat desire. Le worker (loginSW) execute les pods assignes par le serveur.
 #
 # NOTE SUR LE PROJET :
-#   Ce projet utilise QEMU/KVM plutot que VirtualBox (machines 42 sans VBox).
-#   Ce Vagrantfile est conserve pour la reference et la compatibilite, mais
-#   le vrai orchestrateur est le Makefile + les scripts QEMU.
+#   Ce projet utilise Vagrant avec le provider libvirt (QEMU/KVM).
+#   Les VMs sont creees et executees par Vagrant (commande vagrant up).
+#   Le Makefile sert uniquement de wrapper pratique autour des commandes Vagrant.
 #
 # =============================================================================
 
 # "2" = version de la syntaxe Vagrantfile (version actuelle, ne pas changer)
 Vagrant.configure("2") do |config|
+
+  # Les noms de machines/hostnames suivent la convention loginS/loginSW.
+  # On peut forcer un login different via la variable d'environnement P1_LOGIN.
+  login = ENV.fetch("P1_LOGIN", ENV.fetch("USER", "student"))
+  server_name = "#{login}S"
+  worker_name = "#{login}SW"
 
   # === IMAGE DE BASE ===
   # La "box" est l'image VM de depart. "generic/ubuntu2204" = Ubuntu 22.04 LTS
@@ -42,19 +48,19 @@ Vagrant.configure("2") do |config|
   # VM 1 : SERVEUR K3s (loginS = control plane)
   # =============================================================================
   # vm.define cree un bloc de configuration specifique a cette VM.
-  # "loginS" = nom Vagrant de la VM (utilise par vagrant up loginS, vagrant ssh loginS...)
-  config.vm.define "loginS" do |server|
+  # Nom Vagrant: <login>S (utilise par vagrant up <login>S, vagrant ssh <login>S...)
+  config.vm.define server_name do |server|
 
     # Hostname de la VM, visible via "hostname" dans le terminal.
     # Le sujet impose : login de l'etudiant + "S" (ex: pschemitS)
-    server.vm.hostname = "loginS"
+    server.vm.hostname = server_name
 
     # Reseau prive entre les deux VMs (host-only network).
     # Cette IP n'est accessible que depuis le host et l'autre VM.
     # Le worker utilisera cette adresse pour rejoindre le cluster K3s.
     server.vm.network "private_network", ip: "192.168.56.110"
 
-    # Configuration du provider de virtualisation (VirtualBox ici)
+    # Configuration du provider de virtualisation (libvirt = QEMU/KVM)
     server.vm.provider "libvirt" do |lv|
       lv.memory = 1024   # 1 Go de RAM (K3s server est leger)
       lv.cpus   = 1      # 1 vCPU
@@ -70,10 +76,10 @@ Vagrant.configure("2") do |config|
   # =============================================================================
   # La VM worker execute les pods assignes par le control plane.
   # Elle a moins de ressources car elle ne gere pas le cluster, elle execute.
-  config.vm.define "loginSW" do |worker|
+  config.vm.define worker_name do |worker|
 
     # Hostname : login + "SW" (Server Worker)
-    worker.vm.hostname = "loginSW"
+    worker.vm.hostname = worker_name
 
     # IP du worker sur le reseau prive (doit etre dans le meme sous-reseau que le serveur)
     worker.vm.network "private_network", ip: "192.168.56.111"
