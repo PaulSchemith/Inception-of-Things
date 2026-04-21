@@ -14,7 +14,8 @@ all: up
 
 up:
 	@echo "Démarrage des VMs via Vagrant ($(PROVIDER))..."
-	$(VAGRANT_CMD) up --provider=$(PROVIDER)
+	$(VAGRANT_CMD) up $(SERVER) --provider=$(PROVIDER)
+	$(VAGRANT_CMD) up $(WORKER) --provider=$(PROVIDER)
 
 # Compatibilite avec l'ancien workflow: demarre seulement le serveur.
 up-server:

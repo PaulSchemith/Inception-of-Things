@@ -40,12 +40,13 @@ until sudo kubectl get nodes >/dev/null 2>&1; do
 done
 
 # === PARTAGE DU TOKEN AVEC LE WORKER ===
-# K3s génère un token secret à l'install. Le worker en a besoin pour
-# s'authentifier et rejoindre le cluster (comme un mot de passe de cluster).
-# On le copie dans /vagrant (dossier partagé 9p entre host et VMs) pour que
-# le Makefile puisse détecter qu'il est prêt, et que le worker puisse le lire.
-sudo cp /var/lib/rancher/k3s/server/node-token /vagrant/node-token
-sudo chmod 644 /vagrant/node-token  # lisible par tous (le worker le lit sans être root)
+# libvirt ne monte pas /vagrant automatiquement (feature VirtualBox uniquement).
+# On expose le token via un serveur HTTP temporaire sur le réseau privé (port 8080).
+# Le worker le récupère via curl depuis 192.168.56.110:8080.
+TOKEN_DIR=$(mktemp -d)
+cp /var/lib/rancher/k3s/server/node-token "$TOKEN_DIR/node-token"
+nohup python3 -m http.server 8080 --directory "$TOKEN_DIR" >/dev/null 2>&1 &
+disown
 
 # === VÉRIFICATION FINALE ===
 echo "Server node installation complete. Cluster nodes:"

@@ -90,15 +90,14 @@ else
 		exit 1
 	fi
 
-	if "$VAGRANT_BIN" plugin install vagrant-libvirt >"$PLUGIN_LOG" 2>&1; then
+	if C_INCLUDE_PATH=/usr/include "$VAGRANT_BIN" plugin install vagrant-libvirt >"$PLUGIN_LOG" 2>&1; then
 		echo "Plugin vagrant-libvirt installe avec succes."
 	else
 		echo "Echec d'installation de vagrant-libvirt."
 		echo "Log detaille: $PLUGIN_LOG"
 		if grep -q "fatal error: stdio.h: No such file or directory" "$PLUGIN_LOG"; then
-			echo "Erreur detectee: compilation native Ruby impossible (stdio.h introuvable pendant build)."
-			echo "Sur certains environnements, le binaire Vagrant portable (.zip) ne compile pas les plugins natifs."
-			echo "Contournement recommande: utiliser Vagrant installe via paquets systeme (apt) puis installer vagrant-libvirt."
+			echo "Erreur detectee: stdio.h introuvable. Relance avec C_INCLUDE_PATH=/usr/include deja applique."
+			echo "Si l'erreur persiste, verifie que libc6-dev est installe: sudo apt-get install -y libc6-dev"
 		else
 			echo "Cause frequente: dependances libvirt manquantes (libvirt, qemu, ruby-dev, etc.)."
 		fi

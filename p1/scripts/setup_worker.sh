@@ -22,17 +22,12 @@ apt-get install -y curl
 SERVER_IP="192.168.56.110"
 
 # === ATTENTE DU TOKEN ===
-# Le token est créé par setup_server.sh et copié dans /vagrant/node-token.
-# /vagrant est le dossier partagé 9p entre host et VMs (monté par cloud-init).
-# On boucle jusqu'à ce que le fichier apparaisse = le serveur a fini son installation.
-# (Le Makefile attend aussi côté host, mais cette boucle est une sécurité côté VM)
+# Le token est exposé par setup_server.sh via un serveur HTTP temporaire (port 8080)
+# sur le réseau privé. On boucle jusqu'à ce qu'il soit disponible.
 echo "Waiting for K3s token from server..."
-while [ ! -f /vagrant/node-token ]; do
+until K3S_TOKEN=$(curl -sf http://$SERVER_IP:8080/node-token); do
   sleep 5
 done
-
-# Lit le token depuis le fichier partagé
-K3S_TOKEN=$(cat /vagrant/node-token)
 
 # === ATTENTE QUE LE SERVEUR SOIT JOIGNABLE ===
 # Même si le token existe, l'API server K3s doit être prêt à accepter des connexions
