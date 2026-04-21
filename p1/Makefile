@@ -1,57 +1,38 @@
-# Makefile pour P1 - Vagrant + libvirt (QEMU/KVM)
-
-LOGIN       ?= $(USER)
-SERVER      := $(LOGIN)S
-WORKER      := $(LOGIN)SW
-VAGRANT_CMD ?= vagrant
-PROVIDER    ?= libvirt
+LOGIN    ?= $(USER)
+SERVER   := $(LOGIN)S
+WORKER   := $(LOGIN)SW
+PROVIDER ?= libvirt
 
 export P1_LOGIN := $(LOGIN)
 
-.PHONY: all up up-server up-agent destroy halt reload provision status ssh-server ssh-worker test
+.PHONY: all up destroy halt reload provision status ssh-server ssh-worker test
 
 all: up
 
 up:
-	@echo "Démarrage des VMs via Vagrant ($(PROVIDER))..."
-	$(VAGRANT_CMD) up $(SERVER) --provider=$(PROVIDER)
-	$(VAGRANT_CMD) up $(WORKER) --provider=$(PROVIDER)
-
-# Compatibilite avec l'ancien workflow: demarre seulement le serveur.
-up-server:
-	@echo "Démarrage VM serveur $(SERVER) via Vagrant ($(PROVIDER))..."
-	$(VAGRANT_CMD) up $(SERVER) --provider=$(PROVIDER)
-
-# Compatibilite avec l'ancien workflow: demarre seulement le worker.
-up-agent:
-	@echo "Démarrage VM worker $(WORKER) via Vagrant ($(PROVIDER))..."
-	$(VAGRANT_CMD) up $(WORKER) --provider=$(PROVIDER)
+	vagrant up $(SERVER) --provider=$(PROVIDER)
+	vagrant up $(WORKER) --provider=$(PROVIDER)
 
 destroy:
-	@echo "Destruction des VMs Vagrant..."
-	$(VAGRANT_CMD) destroy -f
+	vagrant destroy -f
 
 halt:
-	@echo "Arrêt des VMs Vagrant..."
-	$(VAGRANT_CMD) halt
+	vagrant halt
 
 reload:
-	@echo "Redémarrage des VMs et reprovisionnement..."
-	$(VAGRANT_CMD) reload --provision
+	vagrant reload --provision
 
 provision:
-	@echo "Provisionnement des VMs..."
-	$(VAGRANT_CMD) provision
+	vagrant provision
 
 status:
-	@echo "=== Status des VMs ==="
-	$(VAGRANT_CMD) status
+	vagrant status
 
 ssh-server:
-	$(VAGRANT_CMD) ssh $(SERVER)
+	vagrant ssh $(SERVER)
 
 ssh-worker:
-	$(VAGRANT_CMD) ssh $(WORKER)
+	vagrant ssh $(WORKER)
 
 test:
 	bash scripts/test.sh

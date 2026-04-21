@@ -1,101 +1,48 @@
 # =============================================================================
 # Vagrantfile P1 - Deux VMs Ubuntu : un serveur K3s + un worker K3s
-# =============================================================================
 #
-# VAGRANT c'est quoi ?
-#   Vagrant est un outil qui automatise la creation et la configuration de VMs.
-#   Au lieu de cliquer dans VirtualBox/VMware, on decrit l'infrastructure dans
-#   ce fichier (le Vagrantfile) et Vagrant s'occupe de tout :
-#     vagrant up    → cree et demarre les VMs
-#     vagrant ssh   → se connecte en SSH a une VM
-#     vagrant halt  → arrete les VMs
-#     vagrant destroy → supprime les VMs
-#
-# ARCHITECTURE P1 :
+# ARCHITECTURE :
 #   +-------------------+          +-------------------+
 #   |  loginS           |          |  loginSW          |
 #   |  192.168.56.110   |<-------->|  192.168.56.111   |
 #   |  K3s SERVER       |  reseau  |  K3s AGENT        |
 #   |  (control plane)  |  prive   |  (worker node)    |
 #   +-------------------+          +-------------------+
-#
-#   Le serveur (loginS) gere le cluster : il schedule les pods, maintient
-#   l'etat desire. Le worker (loginSW) execute les pods assignes par le serveur.
-#
-# NOTE SUR LE PROJET :
-#   Ce projet utilise Vagrant avec le provider libvirt (QEMU/KVM).
-#   Les VMs sont creees et executees par Vagrant (commande vagrant up).
-#   Le Makefile sert uniquement de wrapper pratique autour des commandes Vagrant.
-#
 # =============================================================================
 
-# "2" = version de la syntaxe Vagrantfile (version actuelle, ne pas changer)
 Vagrant.configure("2") do |config|
-
-  # Les noms de machines/hostnames suivent la convention loginS/loginSW.
-  # On peut forcer un login different via la variable d'environnement P1_LOGIN.
-  login = ENV.fetch("P1_LOGIN", ENV.fetch("USER", "student"))
+  # Login configurable via la variable d'environnement P1_LOGIN.
+  login       = ENV.fetch("P1_LOGIN", ENV.fetch("USER", "student"))
   server_name = "#{login}S"
   worker_name = "#{login}SW"
 
-  # === IMAGE DE BASE ===
-  # La "box" est l'image VM de depart. "generic/ubuntu2204" = Ubuntu 22.04 LTS
-  # preconfiguree pour Vagrant (cloud image avec cloud-init et openssh).
-  # Vagrant la telecharge automatiquement depuis vagrantcloud.com.
   config.vm.box = "generic/ubuntu2204"
 
+  # virtiofs : dossier partagé bidirectionnel entre le host et les VMs.
+  # Nécessite memorybacking :access, :mode => "shared" dans chaque provider.
   config.vm.synced_folder ".", "/vagrant", type: "virtiofs"
 
-  # =============================================================================
-  # VM 1 : SERVEUR K3s (loginS = control plane)
-  # =============================================================================
-  # vm.define cree un bloc de configuration specifique a cette VM.
-  # Nom Vagrant: <login>S (utilise par vagrant up <login>S, vagrant ssh <login>S...)
+  # === VM 1 : SERVEUR K3s (control plane) ===
   config.vm.define server_name do |server|
-
-    # Hostname de la VM, visible via "hostname" dans le terminal.
-    # Le sujet impose : login de l'etudiant + "S" (ex: pschemitS)
     server.vm.hostname = server_name
-
-    # Reseau prive entre les deux VMs (host-only network).
-    # Cette IP n'est accessible que depuis le host et l'autre VM.
-    # Le worker utilisera cette adresse pour rejoindre le cluster K3s.
     server.vm.network "private_network", ip: "192.168.56.110"
-
-    # Configuration du provider de virtualisation (libvirt = QEMU/KVM)
     server.vm.provider "libvirt" do |lv|
       lv.memory = 1024
       lv.cpus   = 1
       lv.memorybacking :access, :mode => "shared"
     end
-
-    # Provisionnement : script execute automatiquement au premier "vagrant up".
-    # setup_server.sh installe K3s en mode server et partage le node-token.
     server.vm.provision "shell", path: "scripts/setup_server.sh"
   end
 
-  # =============================================================================
-  # VM 2 : WORKER K3s (loginSW = agent/worker node)
-  # =============================================================================
-  # La VM worker execute les pods assignes par le control plane.
-  # Elle a moins de ressources car elle ne gere pas le cluster, elle execute.
+  # === VM 2 : WORKER K3s (agent) ===
   config.vm.define worker_name do |worker|
-
-    # Hostname : login + "SW" (Server Worker)
     worker.vm.hostname = worker_name
-
-    # IP du worker sur le reseau prive (doit etre dans le meme sous-reseau que le serveur)
     worker.vm.network "private_network", ip: "192.168.56.111"
-
     worker.vm.provider "libvirt" do |lv|
       lv.memory = 1024
       lv.cpus   = 1
       lv.memorybacking :access, :mode => "shared"
     end
-
-    # setup_worker.sh lit le node-token du serveur (via /vagrant partage)
-    # et installe K3s en mode agent pour rejoindre le cluster.
     worker.vm.provision "shell", path: "scripts/setup_worker.sh"
   end
-
 end
