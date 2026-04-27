@@ -39,6 +39,7 @@ GITLAB_ROOT_PASSWORD="${GITLAB_ROOT_PASSWORD:-IoT-R00t@42Lab}"
 GITLAB_NODEPORT=30929       # NodePort K8s (range valide : 30000-32767)
 GITLAB_HOST_PORT=8929       # Port accessible depuis le host (via K3d loadbalancer)
 ARGOCD_NODEPORT=31080
+GITLAB_HELM_TIMEOUT="${GITLAB_HELM_TIMEOUT:-45m}"
 
 # Deux URLs pour GitLab selon le contexte :
 # - EXTERNAL : depuis le HOST (scripts, navigateur)  → via K3d loadbalancer
@@ -146,12 +147,13 @@ helm repo update
 if helm status gitlab -n "$GITLAB_NS" >/dev/null 2>&1; then
     echo "  GitLab deja installe via Helm."
 else
-    echo "  Installation en cours (peut prendre 10-20 min pour le telechargement des images)..."
+    echo "  Installation en cours (peut prendre longtemps au premier demarrage)..."
     helm install gitlab gitlab/gitlab \
         --namespace "$GITLAB_NS" \
         --values "$CONFS_DIR/gitlab-values.yaml" \
-        --timeout 20m \
-        --wait
+        --timeout "$GITLAB_HELM_TIMEOUT" \
+        --wait \
+        --wait-for-jobs
 fi
 
 # =============================================================================
